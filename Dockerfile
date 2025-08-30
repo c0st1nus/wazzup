@@ -1,4 +1,4 @@
-FROM rust:1.73-slim-buster as builder
+FROM rust:1.73-slim-buster AS builder
 
 WORKDIR /usr/src/wazzup-rust
 COPY . .
