@@ -1,0 +1,2 @@
+[env]
+RUST_LOG = "actix_web=info,wazzup_rust=debug"

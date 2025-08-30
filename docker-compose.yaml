@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: wazzup_postgres_rust
+    environment:
+      POSTGRES_DB: main
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5433:5432" # Используем другой порт, чтобы не конфликтовать с C# версией
+    volumes:
+      - postgres_data_rust:/var/lib/postgresql/data
+    networks:
+      - wazzup_network_rust
+
+networks:
+  wazzup_network_rust:
+    driver: bridge
+
+volumes:
+  postgres_data_rust:
