@@ -23,4 +23,4 @@ INSERT INTO "companies" (
  '2024-08-20 14:22:00', 
  'premium', 
  5
-);
+) ON CONFLICT (id) DO NOTHING;

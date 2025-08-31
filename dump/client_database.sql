@@ -1,6 +1,6 @@
-CREATE DATABASE client_22289228;
+CREATE DATABASE IF NOT EXISTS client_22289228;
 CREATE SCHEMA IF NOT EXISTS "public";
-CREATE TABLE "public"."bookings" (
+CREATE TABLE IF NOT EXISTS "public"."bookings" (
     "id" BIGSERIAL,
     "code" varchar(6) NOT NULL UNIQUE,
     "service_id" bigint NOT NULL,
@@ -13,11 +13,11 @@ CREATE TABLE "public"."bookings" (
     CONSTRAINT "pk_bookings_id" PRIMARY KEY ("id")
 );
 -- Indexes
-CREATE INDEX "bookings_idx_bookings_service_id" ON "public"."bookings" ("service_id");
-CREATE INDEX "bookings_idx_bookings_client_id" ON "public"."bookings" ("client_id");
-CREATE INDEX "bookings_idx_bookings_start_datetime" ON "public"."bookings" ("start_datetime");
+CREATE INDEX IF NOT EXISTS "bookings_idx_bookings_service_id" ON "public"."bookings" ("service_id");
+CREATE INDEX IF NOT EXISTS "bookings_idx_bookings_client_id" ON "public"."bookings" ("client_id");
+CREATE INDEX IF NOT EXISTS "bookings_idx_bookings_start_datetime" ON "public"."bookings" ("start_datetime");
 
-CREATE TABLE "public"."wazzup_settings" (
+CREATE TABLE IF NOT EXISTS "public"."wazzup_settings" (
     "wazzup_user_id" varchar NOT NULL,
     "wazzup_channel_id" varchar NOT NULL,
     "role" varchar NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE "public"."wazzup_settings" (
     PRIMARY KEY ("wazzup_user_id", "wazzup_channel_id")
 );
 
-CREATE TABLE "public"."service_required_roles" (
+CREATE TABLE IF NOT EXISTS "public"."service_required_roles" (
     "id" BIGSERIAL,
     "service_id" bigint NOT NULL,
     "role_id" bigint NOT NULL,
@@ -33,19 +33,19 @@ CREATE TABLE "public"."service_required_roles" (
     CONSTRAINT "pk_service_required_roles_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."task_assignments" (
+CREATE TABLE IF NOT EXISTS "public"."task_assignments" (
     "task_id" bigint NOT NULL,
     "user_id" bigint NOT NULL,
     PRIMARY KEY ("task_id", "user_id")
 );
 
-CREATE TABLE "public"."task_statuses" (
+CREATE TABLE IF NOT EXISTS "public"."task_statuses" (
     "id" BIGSERIAL,
     "value" text,
     CONSTRAINT "pk_task_statuses_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."tasks" (
+CREATE TABLE IF NOT EXISTS "public"."tasks" (
     "id" BIGSERIAL,
     "name" text NOT NULL,
     "project_id" bigint NOT NULL,
@@ -58,10 +58,10 @@ CREATE TABLE "public"."tasks" (
     CONSTRAINT "pk_tasks_id" PRIMARY KEY ("id")
 );
 -- Indexes
-CREATE INDEX "tasks_idx_tasks_project_id" ON "public"."tasks" ("project_id");
-CREATE INDEX "tasks_idx_tasks_parent_task_id" ON "public"."tasks" ("parent_task_id");
+CREATE INDEX IF NOT EXISTS "tasks_idx_tasks_project_id" ON "public"."tasks" ("project_id");
+CREATE INDEX IF NOT EXISTS "tasks_idx_tasks_parent_task_id" ON "public"."tasks" ("parent_task_id");
 
-CREATE TABLE "public"."users" (
+CREATE TABLE IF NOT EXISTS "public"."users" (
     "id" BIGSERIAL,
     "name" varchar(255) NOT NULL,
     "login" varchar(45) NOT NULL UNIQUE,
@@ -74,7 +74,7 @@ CREATE TABLE "public"."users" (
     CONSTRAINT "pk_users_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."schedule_templates" (
+CREATE TABLE IF NOT EXISTS "public"."schedule_templates" (
     "id" BIGSERIAL,
     "resource_id" bigint NOT NULL,
     "day_of_week" smallint NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE "public"."schedule_templates" (
     CONSTRAINT "pk_schedule_templates_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."resources" (
+CREATE TABLE IF NOT EXISTS "public"."resources" (
     "id" BIGSERIAL,
     "name" varchar(255) NOT NULL,
     "type" varchar(255) NOT NULL,
@@ -94,23 +94,23 @@ CREATE TABLE "public"."resources" (
     CONSTRAINT "pk_resources_id" PRIMARY KEY ("id")
 );
 -- Indexes
-CREATE INDEX "resources_idx_resources_role_id" ON "public"."resources" ("role_id");
+CREATE INDEX IF NOT EXISTS "resources_idx_resources_role_id" ON "public"."resources" ("role_id");
 
-CREATE TABLE "public"."projects" (
+CREATE TABLE IF NOT EXISTS "public"."projects" (
     "id" BIGSERIAL,
     "name" varchar(255) NOT NULL,
     "client_id" bigint NOT NULL,
     CONSTRAINT "pk_projects_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."booking_resources" (
+CREATE TABLE IF NOT EXISTS "public"."booking_resources" (
     "booking_id" bigint NOT NULL,
     "resource_id" bigint NOT NULL,
     "quantity_used" integer NOT NULL,
     CONSTRAINT "pk_booking_resources_booking_id_resource_id" PRIMARY KEY ("booking_id", "resource_id")
 );
 
-CREATE TABLE "public"."availability_exceptions" (
+CREATE TABLE IF NOT EXISTS "public"."availability_exceptions" (
     "id" BIGSERIAL,
     "resource_id" bigint NOT NULL,
     "start_datetime" timestamp NOT NULL,
@@ -120,19 +120,19 @@ CREATE TABLE "public"."availability_exceptions" (
     CONSTRAINT "pk_availability_exceptions_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."wazzup_chats" (
+CREATE TABLE IF NOT EXISTS "public"."wazzup_chats" (
     "id" varchar NOT NULL,
     "channel_id" varchar NOT NULL,
     CONSTRAINT "pk_wazzup_chats_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."wazzup_channels" (
+CREATE TABLE IF NOT EXISTS "public"."wazzup_channels" (
     "id" varchar NOT NULL,
     "type" varchar NOT NULL,
     CONSTRAINT "pk_wazzup_channels_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."wazzup_messages" (
+CREATE TABLE IF NOT EXISTS "public"."wazzup_messages" (
     "id" varchar NOT NULL,
     "type" varchar NOT NULL,
     "content" text NOT NULL,
@@ -140,7 +140,7 @@ CREATE TABLE "public"."wazzup_messages" (
     CONSTRAINT "pk_wazzup_messages_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."services" (
+CREATE TABLE IF NOT EXISTS "public"."services" (
     "id" BIGSERIAL,
     "name" varchar(255) NOT NULL,
     "duration" integer NOT NULL,
@@ -152,7 +152,7 @@ CREATE TABLE "public"."services" (
     CONSTRAINT "pk_services_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."tokens" (
+CREATE TABLE IF NOT EXISTS "public"."tokens" (
     "id" BIGSERIAL,
     "token_hash" varchar(255) NOT NULL UNIQUE,
     "user_id" bigint NOT NULL,
@@ -163,9 +163,9 @@ CREATE TABLE "public"."tokens" (
     CONSTRAINT "pk_tokens_id" PRIMARY KEY ("id")
 );
 -- Indexes
-CREATE INDEX "tokens_idx_tokens_user_id" ON "public"."tokens" ("user_id");
+CREATE INDEX IF NOT EXISTS "tokens_idx_tokens_user_id" ON "public"."tokens" ("user_id");
 
-CREATE TABLE "public"."locations" (
+CREATE TABLE IF NOT EXISTS "public"."locations" (
     "id" BIGSERIAL,
     "name" varchar NOT NULL,
     "address" varchar NOT NULL,
@@ -175,20 +175,20 @@ CREATE TABLE "public"."locations" (
     CONSTRAINT "pk_table_20_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."responsibilites" (
+CREATE TABLE IF NOT EXISTS "public"."responsibilites" (
     "user" bigint NOT NULL,
     "client" bigint NOT NULL,
     CONSTRAINT "pk_table_19_id" PRIMARY KEY ("user", "client")
 );
 
-CREATE TABLE "public"."resource_roles" (
+CREATE TABLE IF NOT EXISTS "public"."resource_roles" (
     "id" BIGSERIAL,
     "name" varchar(255) NOT NULL UNIQUE,
     "description" text,
     CONSTRAINT "pk_resource_roles_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."clients" (
+CREATE TABLE IF NOT EXISTS "public"."clients" (
     "id" BIGSERIAL,
     "full_name" varchar(255) NOT NULL,
     "email" varchar(255) NOT NULL UNIQUE,

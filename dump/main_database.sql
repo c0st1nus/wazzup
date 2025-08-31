@@ -1,6 +1,6 @@
-CREATE DATABASE main;
+CREATE DATABASE IF NOT EXISTS main;
 CREATE SCHEMA IF NOT EXISTS "public";
-CREATE TABLE "companies" (
+CREATE TABLE IF NOT EXISTS "companies" (
     "id" bigint NOT NULL,
     "name" varchar NOT NULL,
     "description" varchar,

@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use sea_orm::{
-    ConnectionTrait, Database, DatabaseConnection, EntityTrait, JsonValue, Statement, Value,
+    ConnectionTrait, Database, DatabaseConnection, JsonValue, Statement, Value,
 };
 use serde_json::{Map, Value as JsonValueSerde};
 use std::fs;
@@ -99,15 +99,9 @@ async fn get_db_connection(
         "main" => std::env::var("DATABASE_URL")?,
         "client" => {
             let id = company_id.ok_or("Для клиентской БД необходимо указать --company-id")?;
-            // Получаем имя БД клиента из основной БД
-            let main_db = Database::connect(std::env::var("DATABASE_URL")?).await?;
-            let company: Option<wazzup::database::main::models::Model> =
-                wazzup::database::main::models::Entity::find_by_id(id)
-                    .one(&main_db)
-                    .await?;
-            let db_name = company
-                .ok_or(format!("Компания с ID {} не найдена", id))?
-                .database_name;
+            
+            // Для клиентской БД формируем имя базы данных на основе ID компании
+            let db_name = format!("client_{}", id);
             config
                 .client_database_url_template
                 .replace("{db_name}", &db_name)
@@ -126,11 +120,12 @@ async fn execute_sql_file(
     let sql = fs::read_to_string(file_path)?;
     // Разделяем на отдельные запросы, если в файле их несколько
     for query in sql.split(';').filter(|s| !s.trim().is_empty()) {
+        let trimmed_query = query.trim();
+        
         db.execute(Statement::from_string(
             db.get_database_backend(),
-            query.to_string(),
-        ))
-        .await?;
+            trimmed_query.to_string(),
+        )).await?;
     }
     println!("Скрипт успешно выполнен.");
     Ok(())
