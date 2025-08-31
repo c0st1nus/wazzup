@@ -4,11 +4,11 @@ CREATE TABLE IF NOT EXISTS "public"."bookings" (
     "code" varchar(6) NOT NULL UNIQUE,
     "service_id" bigint NOT NULL,
     "client_id" bigint NOT NULL,
-    "start_datetime" timestamp NOT NULL,
-    "end_datetime" timestamp NOT NULL,
+    "start_datetime" timestamptz NOT NULL,
+    "end_datetime" timestamptz NOT NULL,
     "status" varchar(255) NOT NULL DEFAULT 'confirmed',
     "notes" text,
-    "created_at" timestamp NOT NULL,
+    "created_at" timestamptz NOT NULL,
     CONSTRAINT "pk_bookings_id" PRIMARY KEY ("id")
 );
 -- Indexes
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS "public"."tasks" (
     "name" text NOT NULL,
     "project_id" bigint NOT NULL,
     "parent_task_id" bigint,
-    "created_at" timestamp NOT NULL,
+    "created_at" timestamptz NOT NULL,
     "content" json,
     "status_id" bigint NOT NULL,
     "previous_task_id" bigint,
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS "public"."resources" (
     "role_id" bigint,
     "quantity" integer NOT NULL,
     "image_path" varchar,
-    "created_at" timestamp NOT NULL,
+    "created_at" timestamptz NOT NULL,
     CONSTRAINT "pk_resources_id" PRIMARY KEY ("id")
 );
 -- Indexes
@@ -112,8 +112,8 @@ CREATE TABLE IF NOT EXISTS "public"."booking_resources" (
 CREATE TABLE IF NOT EXISTS "public"."availability_exceptions" (
     "id" BIGSERIAL,
     "resource_id" bigint NOT NULL,
-    "start_datetime" timestamp NOT NULL,
-    "end_datetime" timestamp NOT NULL,
+    "start_datetime" timestamptz NOT NULL,
+    "end_datetime" timestamptz NOT NULL,
     "type" varchar(255) NOT NULL,
     "reason" text,
     CONSTRAINT "pk_availability_exceptions_id" PRIMARY KEY ("id")
@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS "public"."services" (
     "description" text,
     "image_path" varchar,
     "is_active" boolean NOT NULL DEFAULT TRUE,
-    "created_at" timestamp NOT NULL,
+    "created_at" timestamptz NOT NULL,
     CONSTRAINT "pk_services_id" PRIMARY KEY ("id")
 );
 
@@ -156,9 +156,9 @@ CREATE TABLE IF NOT EXISTS "public"."tokens" (
     "token_hash" varchar(255) NOT NULL UNIQUE,
     "user_id" bigint NOT NULL,
     "name" varchar(255) NOT NULL,
-    "created_at" timestamp NOT NULL,
-    "last_used_at" timestamp,
-    "expires_at" timestamp NOT NULL,
+    "created_at" timestamptz NOT NULL,
+    "last_used_at" timestamptz,
+    "expires_at" timestamptz NOT NULL,
     CONSTRAINT "pk_tokens_id" PRIMARY KEY ("id")
 );
 -- Indexes
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS "public"."locations" (
     "address" varchar NOT NULL,
     "phone" varchar NOT NULL,
     "resource" bigint NOT NULL,
-    "created_at" timestamp NOT NULL,
+    "created_at" timestamptz NOT NULL,
     CONSTRAINT "pk_table_20_id" PRIMARY KEY ("id")
 );
 
@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS "public"."clients" (
     "email" varchar(255) NOT NULL UNIQUE,
     "phone" varchar(50),
     "wazzup_chat" varchar,
-    "created_at" timestamp NOT NULL,
+    "created_at" timestamptz NOT NULL,
     CONSTRAINT "pk_clients_id" PRIMARY KEY ("id")
 );
 

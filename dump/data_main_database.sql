@@ -19,8 +19,8 @@ INSERT INTO "companies" (
  'client_22289228', 
  '316c7f283893478aaf7ba4bb9e8c3eb4', 
  true, 
- '2024-01-15 10:30:00', 
- '2024-08-20 14:22:00', 
+ '2024-01-15 10:30:00+00', 
+ '2024-08-20 14:22:00+00', 
  'premium', 
  5
 ) ON CONFLICT (id) DO NOTHING;

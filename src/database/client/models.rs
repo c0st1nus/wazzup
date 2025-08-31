@@ -2,6 +2,184 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+// --- Bookings ---
+pub mod booking {
+    use super::*;
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, DeriveEntityModel, ToSchema)]
+    #[sea_orm(table_name = "bookings")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub code: String,
+        pub service_id: i64,
+        pub client_id: i64,
+        #[schema(value_type = String, format = DateTime)]
+        pub start_datetime: DateTimeUtc,
+        #[schema(value_type = String, format = DateTime)]
+        pub end_datetime: DateTimeUtc,
+        pub status: String,
+        pub notes: Option<String>,
+        #[schema(value_type = String, format = DateTime)]
+        pub created_at: DateTimeUtc,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {
+        #[sea_orm(
+            belongs_to = "super::service::Entity",
+            from = "Column::ServiceId",
+            to = "super::service::Column::Id"
+        )]
+        Service,
+        #[sea_orm(
+            belongs_to = "super::Entity",
+            from = "Column::ClientId",
+            to = "super::Column::Id"
+        )]
+        Client,
+    }
+
+    impl Related<super::service::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Service.def()
+        }
+    }
+
+    impl Related<super::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Client.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+// --- Services ---
+pub mod service {
+    use super::*;
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, DeriveEntityModel, ToSchema)]
+    #[sea_orm(table_name = "services")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub name: String,
+        pub duration: i32,
+        pub price: i32,
+        pub description: Option<String>,
+        pub image_path: Option<String>,
+        pub is_active: bool,
+        #[schema(value_type = String, format = DateTime)]
+        pub created_at: DateTimeUtc,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {
+        #[sea_orm(has_many = "super::booking::Entity")]
+        Booking,
+    }
+
+    impl Related<super::booking::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Booking.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+// --- Resources ---
+pub mod resource {
+    use super::*;
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, DeriveEntityModel, ToSchema)]
+    #[sea_orm(table_name = "resources")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub name: String,
+        pub r#type: String,
+        pub role_id: Option<i64>,
+        pub quantity: i32,
+        pub image_path: Option<String>,
+        #[schema(value_type = String, format = DateTime)]
+        pub created_at: DateTimeUtc,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+// --- Tasks ---
+pub mod task {
+    use super::*;
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, DeriveEntityModel, ToSchema)]
+    #[sea_orm(table_name = "tasks")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub name: String,
+        pub project_id: i64,
+        pub parent_task_id: Option<i64>,
+        #[schema(value_type = String, format = DateTime)]
+        pub created_at: DateTimeUtc,
+        pub content: Option<serde_json::Value>,
+        pub status_id: i64,
+        pub previous_task_id: Option<i64>,
+        pub route: Option<String>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+// --- Locations ---
+pub mod location {
+    use super::*;
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, DeriveEntityModel, ToSchema)]
+    #[sea_orm(table_name = "locations")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub name: String,
+        pub address: String,
+        pub phone: String,
+        pub resource: i64,
+        #[schema(value_type = String, format = DateTime)]
+        pub created_at: DateTimeUtc,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+// --- Availability Exceptions ---
+pub mod availability_exception {
+    use super::*;
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, DeriveEntityModel, ToSchema)]
+    #[sea_orm(table_name = "availability_exceptions")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub resource_id: i64,
+        #[schema(value_type = String, format = DateTime)]
+        pub start_datetime: DateTimeUtc,
+        #[schema(value_type = String, format = DateTime)]
+        pub end_datetime: DateTimeUtc,
+        pub r#type: String,
+        pub reason: Option<String>,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 // --- Clients ---
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, DeriveEntityModel, ToSchema)]
 #[sea_orm(table_name = "clients")]
@@ -59,10 +237,10 @@ pub mod user {
         pub password_hash: String,
         pub salt: String,
         pub role: String,
-        #[schema(value_type = String, format = DateTime)]
-        pub created_at: DateTimeUtc,
         pub resource_id: Option<i64>,
         pub location: Option<i64>,
+        #[schema(value_type = String, format = DateTime)]
+        pub created_at: DateTimeUtc,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

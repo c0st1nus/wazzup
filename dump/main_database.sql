@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS "companies" (
     "database_name" varchar NOT NULL,
     "wazzup_api_key" VARCHAR NOT NULL,
     "is_active" boolean,
-    "created_at" timestamp,
-    "updated_at" timestamp,
+    "created_at" timestamptz,
+    "updated_at" timestamptz,
     "subscription_tier" varchar,
     "max_locations" bigint,
     CONSTRAINT "pk_table_1_id" PRIMARY KEY ("id")
