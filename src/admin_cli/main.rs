@@ -122,10 +122,25 @@ async fn execute_sql_file(
     for query in sql.split(';').filter(|s| !s.trim().is_empty()) {
         let trimmed_query = query.trim();
         
-        db.execute(Statement::from_string(
+        match db.execute(Statement::from_string(
             db.get_database_backend(),
             trimmed_query.to_string(),
-        )).await?;
+        )).await {
+            Ok(_) => {},
+            Err(e) => {
+                let error_str = e.to_string();
+                // Игнорируем ошибки "уже существует" для баз данных и других объектов
+                if error_str.contains("already exists") || 
+                   error_str.contains("уже существует") ||
+                   error_str.contains("42P04") { // PostgreSQL код для "database already exists"
+                    println!("Объект уже существует, пропускаем: {}", 
+                            trimmed_query.split_whitespace().take(3).collect::<Vec<_>>().join(" "));
+                    continue;
+                } else {
+                    return Err(e.into());
+                }
+            }
+        }
     }
     println!("Скрипт успешно выполнен.");
     Ok(())
