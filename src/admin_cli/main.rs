@@ -96,12 +96,60 @@ async fn get_db_connection(
     config: &Config,
 ) -> Result<DatabaseConnection, Box<dyn std::error::Error>> {
     let db_url = match db_type {
-        "main" => std::env::var("DATABASE_URL")?,
+        "main" => {
+            let main_db_url = std::env::var("DATABASE_URL")?;
+            
+            // Подключаемся к postgres БД для создания main БД
+            let postgres_url = main_db_url.replace("/main", "/postgres");
+            let postgres_db = Database::connect(&postgres_url).await?;
+            
+            // Пытаемся создать main БД
+            let create_db_query = "CREATE DATABASE main".to_string();
+            match postgres_db.execute(Statement::from_string(
+                postgres_db.get_database_backend(),
+                create_db_query,
+            )).await {
+                Ok(_) => println!("Создана основная база данных: main"),
+                Err(e) => {
+                    let error_str = e.to_string();
+                    if error_str.contains("already exists") || error_str.contains("42P04") {
+                        println!("База данных main уже существует");
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            }
+            
+            main_db_url
+        }
         "client" => {
             let id = company_id.ok_or("Для клиентской БД необходимо указать --company-id")?;
             
-            // Для клиентской БД формируем имя базы данных на основе ID компании
+            // Для клиентской БД сначала создаем базу данных, если она не существует
             let db_name = format!("client_{}", id);
+            
+            // Подключаемся к основной БД PostgreSQL для создания клиентской БД
+            let main_db_url = std::env::var("DATABASE_URL")?;
+            let postgres_url = main_db_url.replace("/main", "/postgres");
+            let postgres_db = Database::connect(&postgres_url).await?;
+            
+            // Пытаемся создать клиентскую БД
+            let create_db_query = format!("CREATE DATABASE {}", db_name);
+            match postgres_db.execute(Statement::from_string(
+                postgres_db.get_database_backend(),
+                create_db_query,
+            )).await {
+                Ok(_) => println!("Создана клиентская база данных: {}", db_name),
+                Err(e) => {
+                    let error_str = e.to_string();
+                    if error_str.contains("already exists") || error_str.contains("42P04") {
+                        println!("База данных {} уже существует", db_name);
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            }
+            
             config
                 .client_database_url_template
                 .replace("{db_name}", &db_name)

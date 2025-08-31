@@ -1,4 +1,3 @@
-CREATE DATABASE main;
 CREATE SCHEMA IF NOT EXISTS "public";
 CREATE TABLE IF NOT EXISTS "companies" (
     "id" bigint NOT NULL,

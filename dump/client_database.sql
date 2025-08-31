@@ -1,4 +1,3 @@
-CREATE DATABASE client_22289228;
 CREATE SCHEMA IF NOT EXISTS "public";
 CREATE TABLE IF NOT EXISTS "public"."bookings" (
     "id" BIGSERIAL,
