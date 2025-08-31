@@ -1,7 +1,15 @@
 [package]
 name = "wazzup"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+
+[[bin]]
+name = "wazzup-rust"
+path = "src/main.rs"
+
+[[bin]]
+name = "admin-cli"
+path = "src/admin_cli/main.rs"
 
 [dependencies]
 actix-web = "4.11.0"
@@ -9,7 +17,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
 dotenvy = "0.15.0"
 config = "0.15.15"
-sea-orm = { version = "1.1.14", features = [ "sqlx-postgres", "sqlx-mysql", "runtime-actix-rustls", "macros" ] }
+sea-orm = { version = "1.1.14", features = [ "sqlx-postgres", "sqlx-mysql", "runtime-actix-rustls", "macros", "with-json" ] }
 reqwest = { version = "0.12.23", features = ["json"] }
 chrono = { version = "0.4.41", features = ["serde"] }
 chrono-tz = "0.10.4"
@@ -20,3 +28,5 @@ log = "0.4.27"
 env_logger = "0.11.8"
 thiserror = "2.0.16"
 url = "2.5.2"
+clap = { version = "4.5.4", features = ["derive"] }
+tokio = { version = "1.37.0", features = ["full"] }

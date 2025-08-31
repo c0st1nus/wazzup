@@ -1,20 +1,45 @@
 services:
+  wazzup-service:
+    container_name: wazzup_service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "1242:8080"
+    depends_on:
+      - postgres
+    env_file:
+      - ./.env
+    networks:
+      - wazzup_network
+
   postgres:
     image: postgres:15
-    container_name: wazzup_postgres_rust
+    container_name: wazzup_postgres
     environment:
       POSTGRES_DB: main
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password123
-    ports:
-      - "5433:5432" # Используем другой порт, чтобы не конфликтовать с C# версией
+      POSTGRES_PORT: 5432
     volumes:
       - postgres_data_rust:/var/lib/postgresql/data
     networks:
-      - wazzup_network_rust
+      - wazzup_network
+
+  pgweb:
+    image: sosedoff/pgweb
+    container_name: wazzup_pgweb
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+    environment:
+      PGWEB_DATABASE_URL: "postgres://postgres:password123@postgres:5432/main?sslmode=disable"
+    networks:
+      - wazzup_network
 
 networks:
-  wazzup_network_rust:
+  wazzup_network:
     driver: bridge
 
 volumes:
