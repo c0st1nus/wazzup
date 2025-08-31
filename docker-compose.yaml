@@ -28,15 +28,15 @@ services:
     networks:
       - wazzup_network
 
-  pgweb:
-    image: sosedoff/pgweb
-    container_name: wazzup_pgweb
+  dbgate:
+    image: dbgate/dbgate
+    container_name: wazzup_dbgate
     ports:
-      - "8081:8081"
+      - "3000:3000"
     depends_on:
       - postgres
     environment:
-      PGWEB_DATABASE_URL: "postgres://postgres:password123@postgres:5432/main?sslmode=disable"
+      - DBGATE_DATABASE_URL=postgres://postgres:password123@postgres:5432/main
     networks:
       - wazzup_network
 
