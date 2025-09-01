@@ -117,11 +117,11 @@ async fn connect_webhooks(
     }
 
     let webhooks_uri = if let Some(public_url) = &app_state.config.public_url {
-        format!("{}/webhook/{}", public_url, company_id)
+        format!("{}/api/webhook/{}", public_url, company_id)
     } else {
         let host = req.connection_info().host().to_string();
         let scheme = req.connection_info().scheme().to_string();
-        format!("{}://{}/webhook/{}", scheme, host, company_id)
+        format!("{}://{}/api/webhook/{}", scheme, host, company_id)
     };
     
     log::info!("Generated webhooks_uri: {}", webhooks_uri);
