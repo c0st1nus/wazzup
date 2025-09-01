@@ -1,39 +1,17 @@
 use actix_web::{delete, get, post, put, web, HttpResponse};
-use sea_orm::{DatabaseConnection, EntityTrait};
+
 use crate::{
-    database::main::models as main_models,
+    api::helpers,
     errors::AppError,
     services::wazzup_api::{self, CreateContactRequest, UpdateContactRequest},
     AppState,
 };
 
-// --- Helper Functions ---
-
-/// Находит компанию и возвращает ее API ключ.
-async fn get_company_api_key(
-    company_id: i64,
-    db: &DatabaseConnection,
-) -> Result<String, AppError> {
-    let company = main_models::Entity::find_by_id(company_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Company with id {} not found", company_id)))?;
-
-    if company.wazzup_api_key.is_empty() {
-        Err(AppError::InvalidInput(format!(
-            "API key for company {} is not set",
-            company_id
-        )))
-    } else {
-        Ok(company.wazzup_api_key)
-    }
-}
-
 // --- Route Handlers ---
 
 #[utoipa::path(
     get,
-    path = "/api/company/{companyId}/contacts",
+    path = "/api/contacts/{companyId}",
     tag = "Contacts",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -43,13 +21,13 @@ async fn get_company_api_key(
         (status = 404, description = "Company not found")
     )
 )]
-#[get("/{companyId}/contacts")]
+#[get("/{companyId}")]
 async fn get_contacts(
     app_state: web::Data<AppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
-    let api_key = get_company_api_key(company_id, &app_state.db).await?;
+    let api_key = helpers::get_company_api_key(company_id, &app_state.db).await?;
     let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let response = wazzup_api.get_contacts(&api_key).await?;
@@ -58,7 +36,7 @@ async fn get_contacts(
 
 #[utoipa::path(
     post,
-    path = "/api/company/{companyId}/contacts",
+    path = "/api/contacts/{companyId}",
     tag = "Contacts",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -69,14 +47,14 @@ async fn get_contacts(
         (status = 404, description = "Company not found")
     )
 )]
-#[post("/{companyId}/contacts")]
+#[post("/{companyId}")]
 async fn create_contact(
     app_state: web::Data<AppState>,
     path: web::Path<i64>,
     body: web::Json<CreateContactRequest>,
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
-    let api_key = get_company_api_key(company_id, &app_state.db).await?;
+    let api_key = helpers::get_company_api_key(company_id, &app_state.db).await?;
     let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let response = wazzup_api.create_contact(&api_key, &body.into_inner()).await?;
@@ -85,7 +63,7 @@ async fn create_contact(
 
 #[utoipa::path(
     put,
-    path = "/api/company/{companyId}/contacts/{contactId}",
+    path = "/api/contacts/{companyId}/{contactId}",
     tag = "Contacts",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
@@ -97,14 +75,14 @@ async fn create_contact(
         (status = 404, description = "Company not found")
     )
 )]
-#[put("/{companyId}/contacts/{contactId}")]
+#[put("/{companyId}/{contactId}")]
 async fn update_contact(
     app_state: web::Data<AppState>,
     path: web::Path<(i64, String)>,
     body: web::Json<UpdateContactRequest>,
 ) -> Result<HttpResponse, AppError> {
     let (company_id, contact_id) = path.into_inner();
-    let api_key = get_company_api_key(company_id, &app_state.db).await?;
+    let api_key = helpers::get_company_api_key(company_id, &app_state.db).await?;
     let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let response = wazzup_api
@@ -115,7 +93,7 @@ async fn update_contact(
 
 #[utoipa::path(
     delete,
-    path = "/api/company/{companyId}/contacts/{contactId}",
+    path = "/api/contacts/{companyId}/{contactId}",
     tag = "Contacts",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
@@ -126,13 +104,13 @@ async fn update_contact(
         (status = 404, description = "Company not found")
     )
 )]
-#[delete("/{companyId}/contacts/{contactId}")]
+#[delete("/{companyId}/{contactId}")]
 async fn delete_contact(
     app_state: web::Data<AppState>,
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse, AppError> {
     let (company_id, contact_id) = path.into_inner();
-    let api_key = get_company_api_key(company_id, &app_state.db).await?;
+    let api_key = helpers::get_company_api_key(company_id, &app_state.db).await?;
     let wazzup_api = wazzup_api::WazzupApiService::new();
 
     wazzup_api.delete_contact(&api_key, &contact_id).await?;
@@ -142,7 +120,7 @@ async fn delete_contact(
 // Функция для регистрации всех маршрутов этого модуля
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/company")
+        web::scope("/contacts")
             .service(get_contacts)
             .service(create_contact)
             .service(update_contact)

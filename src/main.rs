@@ -129,8 +129,8 @@ async fn main() -> std::io::Result<()> {
                     .configure(messages::init_routes)
                     .configure(users::init_routes)
                     .configure(contacts::init_routes)
+                    .configure(webhooks::init_routes)
             )
-            .service(web::scope("/webhook").configure(webhooks::init_routes))
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}")
                     .url("/api-docs/openapi.json", ApiDoc::openapi()),

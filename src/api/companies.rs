@@ -2,10 +2,15 @@ use actix_web::{delete, get, post, put, web, HttpResponse};
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 use serde::Deserialize;
 use utoipa::ToSchema;
-use crate::database::main::models as main_models;
-use crate::{errors::AppError, AppState};
 
-// DTO (Data Transfer Object) для создания компании
+use crate::{
+    database::main::models as main_models,
+    errors::AppError,
+    AppState,
+};
+
+// --- DTOs (Data Transfer Objects) ---
+
 #[derive(Deserialize, ToSchema, Clone)]
 pub struct CreateCompanyDto {
     name: String,
@@ -16,7 +21,6 @@ pub struct CreateCompanyDto {
     phone: Option<String>,
 }
 
-// DTO для обновления компании
 #[derive(Deserialize, ToSchema, Clone)]
 pub struct UpdateCompanyDto {
     name: String,
@@ -27,6 +31,8 @@ pub struct UpdateCompanyDto {
     is_active: Option<bool>,
 }
 
+// --- Route Handlers ---
+
 
 #[utoipa::path(
     get,
@@ -36,7 +42,7 @@ pub struct UpdateCompanyDto {
         (status = 200, description = "List all companies", body = [main_models::Model])
     )
 )]
-#[get("/companies")]
+#[get("/")]
 async fn get_companies(data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
     let companies = main_models::Entity::find().all(&data.db).await?;
     Ok(HttpResponse::Ok().json(companies))
@@ -55,7 +61,7 @@ async fn get_companies(data: web::Data<AppState>) -> Result<HttpResponse, AppErr
         (status = 404, description = "Company not found")
     )
 )]
-#[get("/companies/{id}")]
+#[get("/{id}")]
 async fn get_company_by_id(
     data: web::Data<AppState>,
     path: web::Path<i64>,
@@ -79,7 +85,7 @@ async fn get_company_by_id(
         (status = 201, description = "Company created successfully", body = main_models::Model)
     )
 )]
-#[post("/companies")]
+#[post("/")]
 async fn create_company(
     data: web::Data<AppState>,
     new_company_dto: web::Json<CreateCompanyDto>,
@@ -114,7 +120,7 @@ async fn create_company(
         (status = 404, description = "Company not found")
     )
 )]
-#[put("/companies/{id}")]
+#[put("/{id}")]
 async fn update_company(
     data: web::Data<AppState>,
     path: web::Path<i64>,
@@ -152,7 +158,7 @@ async fn update_company(
         (status = 404, description = "Company not found")
     )
 )]
-#[delete("/companies/{id}")]
+#[delete("/{id}")]
 async fn delete_company(
     data: web::Data<AppState>,
     path: web::Path<i64>,
@@ -171,9 +177,12 @@ async fn delete_company(
 
 // Функция для регистрации всех маршрутов этого модуля
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
-    cfg.service(get_companies)
-       .service(get_company_by_id)
-       .service(create_company)
-       .service(update_company)
-       .service(delete_company);
+    cfg.service(
+        web::scope("/companies")
+            .service(get_companies)
+            .service(get_company_by_id)
+            .service(create_company)
+            .service(update_company)
+            .service(delete_company)
+    );
 }

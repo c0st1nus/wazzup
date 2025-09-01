@@ -219,6 +219,7 @@ impl WazzupApiService {
         Ok(contact.clone())
     }
     
+    #[allow(dead_code)]
     pub async fn get_contact(&self, api_key: &str, contact_id: &str) -> Result<WazzupContact, AppError> {
         let path = format!("/v3/contacts/{}", contact_id);
         self.request_contacts_api(api_key, Method::GET, &path, None::<&()>).await

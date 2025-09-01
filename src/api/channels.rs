@@ -99,7 +99,7 @@ async fn sync_channels_to_db(
 
 #[utoipa::path(
     get,
-    path = "/api/company/{companyId}/channels",
+    path = "/api/channels/{companyId}",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -109,7 +109,7 @@ async fn sync_channels_to_db(
         (status = 404, description = "Company not found")
     )
 )]
-#[get("/{companyId}/channels")]
+#[get("/{companyId}")]
 async fn get_channels(
     app_state: web::Data<AppState>,
     path: web::Path<i64>,
@@ -134,7 +134,7 @@ async fn get_channels(
 
 #[utoipa::path(
     delete,
-    path = "/api/company/{companyId}/channels/{transport}/{channelId}",
+    path = "/api/channels/{companyId}/{transport}/{channelId}",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
@@ -147,7 +147,7 @@ async fn get_channels(
         (status = 404, description = "Company not found")
     )
 )]
-#[delete("/{companyId}/channels/{transport}/{channelId}")]
+#[delete("/{companyId}/{transport}/{channelId}")]
 async fn delete_channel(
     app_state: web::Data<AppState>,
     path: web::Path<(i64, String, String)>,
@@ -186,7 +186,7 @@ async fn delete_channel(
 
 #[utoipa::path(
     post,
-    path = "/api/company/{companyId}/channels/iframe-link",
+    path = "/api/channels/{companyId}/iframe-link",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -197,7 +197,7 @@ async fn delete_channel(
         (status = 404, description = "Company not found")
     )
 )]
-#[post("/{companyId}/channels/iframe-link")]
+#[post("/{companyId}/iframe-link")]
 async fn generate_wrapped_iframe_link(
     app_state: web::Data<AppState>,
     req: HttpRequest, 
@@ -231,7 +231,7 @@ async fn generate_wrapped_iframe_link(
 
 #[utoipa::path(
     post,
-    path = "/api/company/{companyId}/channels/added/{transport}",
+    path = "/api/channels/{companyId}/added/{transport}",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
@@ -242,7 +242,7 @@ async fn generate_wrapped_iframe_link(
         (status = 200, description = "Notification processed")
     )
 )]
-#[post("/{companyId}/channels/added/{transport}")]
+#[post("/{companyId}/added/{transport}")]
 async fn handle_channel_added(
     app_state: web::Data<AppState>,
     path: web::Path<(i64, String)>,
@@ -281,7 +281,7 @@ async fn handle_channel_added(
 // --- НОВЫЙ ЭНДПОИНТ ---
 #[utoipa::path(
     post,
-    path = "/api/company/{companyId}/channels/{transport}/{channelId}/reinit",
+    path = "/api/channels/{companyId}/{transport}/{channelId}/reinit",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
@@ -293,7 +293,7 @@ async fn handle_channel_added(
         (status = 404, description = "Company not found")
     )
 )]
-#[post("/{companyId}/channels/{transport}/{channelId}/reinit")]
+#[post("/{companyId}/{transport}/{channelId}/reinit")]
 async fn reinitialize_channel(
     app_state: web::Data<AppState>,
     path: web::Path<(i64, String, String)>,
@@ -313,11 +313,11 @@ async fn reinitialize_channel(
 // Функция для регистрации всех маршрутов этого модуля
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/company")
+        web::scope("/channels")
             .service(get_channels)
             .service(delete_channel)
             .service(generate_wrapped_iframe_link)
             .service(handle_channel_added)
-            .service(reinitialize_channel), // <-- РЕГИСТРИРУЕМ НОВЫЙ МАРШРУТ
+            .service(reinitialize_channel),
     );
 }

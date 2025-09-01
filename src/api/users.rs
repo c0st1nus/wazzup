@@ -74,7 +74,7 @@ async fn get_company_api_key(
 
 #[utoipa::path(
     get,
-    path = "/api/company/{companyId}/users",
+    path = "/api/users/{companyId}",
     tag = "Users",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -84,7 +84,7 @@ async fn get_company_api_key(
         (status = 404, description = "Company not found")
     )
 )]
-#[get("/{companyId}/users")]
+#[get("/{companyId}")]
 async fn get_users(
     app_state: web::Data<AppState>,
     path: web::Path<i64>,
@@ -98,7 +98,7 @@ async fn get_users(
 
 #[utoipa::path(
     post,
-    path = "/api/company/{companyId}/users",
+    path = "/api/users/{companyId}",
     tag = "Users",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -110,7 +110,7 @@ async fn get_users(
         (status = 400, description = "Invalid input, e.g., user already exists")
     )
 )]
-#[post("/{companyId}/users")]
+#[post("/{companyId}")]
 async fn create_user(
     app_state: web::Data<AppState>,
     path: web::Path<i64>,
@@ -147,7 +147,7 @@ async fn create_user(
 
 #[utoipa::path(
     get,
-    path = "/api/company/{companyId}/users/settings",
+    path = "/api/users/{companyId}/settings",
     tag = "Users",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -157,7 +157,7 @@ async fn create_user(
         (status = 404, description = "Company not found or API key not set")
     )
 )]
-#[get("/{companyId}/users/settings")]
+#[get("/{companyId}/settings")]
 async fn get_settings(
     app_state: web::Data<AppState>,
     path: web::Path<i64>,
@@ -173,7 +173,7 @@ async fn get_settings(
 
 #[utoipa::path(
     patch,
-    path = "/api/company/{companyId}/users/settings",
+    path = "/api/users/{companyId}/settings",
     tag = "Users",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -184,7 +184,7 @@ async fn get_settings(
         (status = 404, description = "Company not found or API key not set")
     )
 )]
-#[patch("/{companyId}/users/settings")]
+#[patch("/{companyId}/settings")]
 async fn update_settings(
     app_state: web::Data<AppState>,
     path: web::Path<i64>,
@@ -202,7 +202,7 @@ async fn update_settings(
 // Функция для регистрации всех маршрутов этого модуля
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/company")
+        web::scope("/users")
             .service(get_users)
             .service(create_user)
             .service(get_settings)

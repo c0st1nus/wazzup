@@ -27,7 +27,7 @@ pub struct ConnectWebhooksResponse {
 
 #[utoipa::path(
     post,
-    path = "/webhook/{id}",
+    path = "/api/webhook/{id}",
     tag = "Webhooks",
     params(
         ("id" = i64, Path, description = "Company ID")
@@ -54,7 +54,7 @@ async fn handle_webhook(
 
 #[utoipa::path(
     get,
-    path = "/webhook/{id}/connect",
+    path = "/api/webhook/{id}/connect",
     tag = "Webhooks",
     params(
         ("id" = i64, Path, description = "Company ID")
@@ -123,7 +123,7 @@ async fn connect_webhooks(
 
 #[utoipa::path(
     post,
-    path = "/webhook/{id}/test",
+    path = "/api/webhook/{id}/test",
     tag = "Webhooks",
     params(
         ("id" = i64, Path, description = "Company ID")
@@ -158,7 +158,10 @@ async fn test_webhook(
 
 // Функция для регистрации всех маршрутов этого модуля
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
-    cfg.service(handle_webhook)
-       .service(connect_webhooks)
-       .service(test_webhook);
+    cfg.service(
+        web::scope("/webhook")
+            .service(handle_webhook)
+            .service(connect_webhooks)
+            .service(test_webhook)
+    );
 }
