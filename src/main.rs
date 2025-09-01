@@ -123,6 +123,7 @@ async fn main() -> std::io::Result<()> {
             }))
             .service(
                 web::scope("/api")
+                    .wrap(middleware::NormalizePath::trim())
                     .configure(companies::init_routes)
                     .configure(channels::init_routes)
                     .configure(chats::init_routes)
@@ -132,7 +133,8 @@ async fn main() -> std::io::Result<()> {
                     .configure(webhooks::init_routes)
             )
             .service(
-                SwaggerUi::new("/swagger-ui/{_:.*}")
+                web::redirect("/swagger", "/swagger/"))
+                .service(SwaggerUi::new("/swagger/{_:.*}")
                     .url("/api-docs/openapi.json", ApiDoc::openapi()),
             )
     })

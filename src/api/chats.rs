@@ -87,7 +87,7 @@ async fn get_last_message_for_chat(
         (status = 200, description = "List of chats with basic information", body = ChatListResponse)
     )
 )]
-#[get("/")]
+#[get("")]
 async fn get_chats(
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, AppError> {
