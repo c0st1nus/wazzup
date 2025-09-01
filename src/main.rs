@@ -60,6 +60,11 @@ async fn main() -> std::io::Result<()> {
             users::create_user,
             users::get_settings,
             users::update_settings,
+            // Contacts
+            contacts::get_contacts,
+            contacts::get_contact_by_id,
+            contacts::update_contact,
+            contacts::delete_contact,
             // Webhooks
             webhooks::handle_webhook,
             webhooks::connect_webhooks,
@@ -75,6 +80,8 @@ async fn main() -> std::io::Result<()> {
                 companies::CreateCompanyDto,
                 companies::UpdateCompanyDto,
                 users::CreateUserDto,
+                contacts::UpdateContactDto,
+                contacts::ContactWithWazzupData,
                 channels::WrappedIframeLinkResponse,
                 channels::ChannelAddedNotification,
                 webhooks::ConnectWebhooksResponse,
@@ -105,6 +112,7 @@ async fn main() -> std::io::Result<()> {
             (name = "Chats", description = "Chat management endpoints (local data only)"),
             (name = "Messages", description = "Message sending and retrieval endpoints"),
             (name = "Users", description = "User management endpoints"),
+            (name = "Contacts", description = "Contact management endpoints (synced with Wazzup)"),
             (name = "Webhooks", description = "Endpoints for receiving Wazzup webhooks")
         )
     )]

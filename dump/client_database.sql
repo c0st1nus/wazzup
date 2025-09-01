@@ -9,7 +9,7 @@ CREATE TABLE "public"."bookings" (
     "end_datetime" timestamp with time zone NOT NULL,
     "status" varchar(255) NOT NULL DEFAULT 'confirmed',
     "notes" text,
-    "created_at" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_bookings_id" PRIMARY KEY ("id")
 );
 -- Indexes
@@ -59,7 +59,7 @@ CREATE TABLE "public"."tasks" (
     "name" text NOT NULL,
     "project_id" bigint NOT NULL,
     "parent_task_id" bigint,
-    "created_at" timestamp with time zone NOT NULL DEFAULT 'has default',
+    "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     "content" json,
     "status_id" bigint NOT NULL,
     "previous_task_id" bigint,
@@ -99,7 +99,7 @@ CREATE TABLE "public"."resources" (
     "role_id" bigint,
     "quantity" integer NOT NULL,
     "image_path" varchar,
-    "created_at" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_resources_id" PRIMARY KEY ("id")
 );
 -- Indexes
@@ -146,6 +146,7 @@ CREATE TABLE "public"."wazzup_messages" (
     "type" varchar NOT NULL,
     "content" text NOT NULL,
     "chat_id" varchar NOT NULL,
+    "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_wazzup_messages_id" PRIMARY KEY ("id")
 );
 
@@ -157,7 +158,7 @@ CREATE TABLE "public"."services" (
     "description" text,
     "image_path" varchar,
     "is_active" boolean NOT NULL DEFAULT TRUE,
-    "created_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" timestamp NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_services_id" PRIMARY KEY ("id")
 );
 
@@ -172,8 +173,8 @@ CREATE TABLE "public"."tokens" (
     "token_hash" varchar(255) NOT NULL UNIQUE,
     "user_id" bigint NOT NULL,
     "name" varchar(255) NOT NULL,
-    "created_at" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "last_used_at" timestamp with time zone,
+    "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
+    "last_used_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     "expires_at" timestamp with time zone NOT NULL,
     CONSTRAINT "pk_tokens_id" PRIMARY KEY ("id")
 );
@@ -186,7 +187,7 @@ CREATE TABLE "public"."locations" (
     "address" varchar NOT NULL,
     "phone" varchar NOT NULL,
     "resource_id" bigint NOT NULL,
-    "created_at" timestamp with time zone NOT NULL DEFAULT '`CURRENT_TIMESTAMP`',
+    "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_table_20_id" PRIMARY KEY ("id")
 );
 
@@ -209,7 +210,7 @@ CREATE TABLE "public"."clients" (
     "email" varchar(255) NOT NULL UNIQUE,
     "phone" varchar(50),
     "wazzup_chat" varchar,
-    "created_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_clients_id" PRIMARY KEY ("id")
 );
 
