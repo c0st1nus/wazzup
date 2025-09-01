@@ -26,6 +26,39 @@ pub struct ConnectWebhooksResponse {
 // --- Route Handlers ---
 
 #[utoipa::path(
+    get,
+    path = "/api/webhook/{id}",
+    tag = "Webhooks",
+    params(
+        ("id" = i64, Path, description = "Company ID")
+    ),
+    responses(
+        (status = 200, description = "Webhook validation successful", body = inline(serde_json::Value)),
+        (status = 404, description = "Company not found")
+    )
+)]
+#[get("/{id}")]
+async fn validate_webhook(
+    app_state: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse, AppError> {
+    let company_id = path.into_inner();
+    log::info!("Webhook validation request for company {}", company_id);
+    
+    // Проверяем, что компания существует
+    let _company = main_models::Entity::find_by_id(company_id)
+        .one(&app_state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
+    
+    // Возвращаем статус 200 для валидации webhook'а
+    Ok(HttpResponse::Ok().json(serde_json::json!({ 
+        "status": "ok",
+        "message": "Webhook endpoint is valid"
+    })))
+}
+
+#[utoipa::path(
     post,
     path = "/api/webhook/{id}",
     tag = "Webhooks",
@@ -160,6 +193,7 @@ async fn test_webhook(
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/webhook")
+            .service(validate_webhook)
             .service(handle_webhook)
             .service(connect_webhooks)
             .service(test_webhook)
