@@ -435,11 +435,14 @@ pub struct WebhookSubscriptionRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct WebhookSubscriptions {
+    #[serde(rename = "messagesAndStatuses")]
     pub messages_and_statuses: bool,
+    #[serde(rename = "contactsAndDealsCreation")]
     pub contacts_and_deals_creation: bool,
+    #[serde(rename = "channelsUpdates")]
     pub channels_updates: bool,
+    #[serde(rename = "templateStatus")]
     pub template_status: bool,
 }
 
