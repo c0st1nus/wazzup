@@ -83,9 +83,15 @@ async fn connect_webhooks(
         return Err(AppError::InvalidInput("Company API key not set".to_string()));
     }
 
-    let host = req.connection_info().host().to_string();
-    let scheme = req.connection_info().scheme().to_string();
-    let webhooks_uri = format!("{}://{}/webhook/{}", scheme, host, company_id);
+    let webhooks_uri = if let Some(public_url) = &app_state.config.public_url {
+        format!("{}/webhook/{}", public_url, company_id)
+    } else {
+        let host = req.connection_info().host().to_string();
+        let scheme = req.connection_info().scheme().to_string();
+        format!("{}://{}/webhook/{}", scheme, host, company_id)
+    };
+    
+    log::info!("Generated webhooks_uri: {}", webhooks_uri);
 
     let subscriptions = WebhookSubscriptions {
         messages_and_statuses: true,
@@ -98,13 +104,15 @@ async fn connect_webhooks(
         webhooks_uri: webhooks_uri.clone(),
         subscriptions: subscriptions.clone(),
     };
+    
+    log::info!("Sending webhook request: {:?}", request);
 
     let wazzup_api =
-        wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+        wazzup_api::WazzupApiService::new();
     
-    wazzup_api.connect_webhooks(&company.wazzup_api_key, &request).await?;
+    let response = wazzup_api.connect_webhooks(&company.wazzup_api_key, &request).await?;
 
-    log::info!("Successfully connected webhooks for company {}", company_id);
+    log::info!("Successfully connected webhooks for company {}, response: {}", company_id, response);
     Ok(HttpResponse::Ok().json(ConnectWebhooksResponse {
         ok: true,
         webhooks_uri,
@@ -136,6 +144,7 @@ async fn test_webhook(
     let test_webhook_request = webhook_handler::WebhookRequest {
         test: Some(true),
         messages: None,
+        contacts: None,
     };
 
     webhook_handler::handle_webhook(company_id, test_webhook_request, &app_state.db, &app_state.config).await?;

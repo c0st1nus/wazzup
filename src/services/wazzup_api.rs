@@ -4,6 +4,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
+const WAZZUP_API_BASE_URL: &str = "https://tech.wazzup24.com";
+
 #[derive(Clone)]
 pub struct WazzupApiService {
     client: Client,
@@ -12,10 +14,10 @@ pub struct WazzupApiService {
 
 // Generic request helpers
 impl WazzupApiService {
-    pub fn new(base_url: String) -> Self {
+    pub fn new() -> Self {
         Self {
             client: Client::new(),
-            base_url,
+            base_url: WAZZUP_API_BASE_URL.to_string(),
         }
     }
 
@@ -53,14 +55,17 @@ impl WazzupApiService {
         Ok(result)
     }
 
-    // Специальный метод для PATCH вебхуков, так как у него другой base_url
-    async fn request_patch_webhooks<T: Serialize, R: DeserializeOwned>(
+    // Специальный метод для PATCH вебхуков, который возвращает строку
+    async fn request_patch_webhooks_string<T: Serialize>(
         &self,
         api_key: &str,
         path: &str,
         body: &T,
-    ) -> Result<R, AppError> {
+    ) -> Result<String, AppError> {
         let url = format!("https://api.wazzup24.com{}", path);
+        log::info!("Making webhook PATCH request to: {}", url);
+        log::info!("Request body: {:?}", serde_json::to_string(body).unwrap_or_default());
+        
         let response = self.client.patch(&url)
             .bearer_auth(api_key)
             .json(body)
@@ -77,8 +82,64 @@ impl WazzupApiService {
             )));
         }
 
-        let result = response.json::<R>().await?;
-        Ok(result)
+        log::info!("Webhook PATCH request successful, status: {}", response.status());
+        let response_text = response.text().await?;
+        log::info!("Webhook PATCH response body: {}", response_text);
+        
+        Ok(response_text)
+    }
+
+    // Специальный метод для контактов через api.wazzup24.com
+    async fn request_contacts_api<T: Serialize, R: DeserializeOwned>(
+        &self,
+        api_key: &str,
+        method: Method,
+        path: &str,
+        body: Option<&T>,
+    ) -> Result<R, AppError> {
+        let url = format!("https://api.wazzup24.com{}", path);
+        let mut request_builder = self.client.request(method, &url).bearer_auth(api_key);
+
+        if let Some(body_data) = body {
+            request_builder = request_builder.json(body_data);
+        }
+
+        log::info!("Making contacts API request to: {}", url);
+        if let Some(body_data) = body {
+            log::info!("Request body: {:?}", serde_json::to_string(body_data).unwrap_or_default());
+        }
+
+        let response = request_builder.send().await?;
+
+        // Проверяем статус, потом обрабатываем тело.
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error reading response body".to_string());
+            log::error!("Wazzup Contacts API Error on path {}: {} - {}", path, status, error_text);
+            return Err(AppError::InvalidInput(format!(
+                "Contacts API request failed with status {}: {}",
+                status, error_text
+            )));
+        }
+
+        log::info!("Contacts API request successful, status: {}", response.status());
+        
+        // Получаем текст ответа для логирования
+        let response_text = response.text().await?;
+        log::info!("Contacts API response body: {}", response_text);
+        
+        // Пробуем парсить JSON из текста
+        match serde_json::from_str::<R>(&response_text) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                log::error!("Failed to parse response JSON: {}", e);
+                log::error!("Response text was: {}", response_text);
+                Err(AppError::InvalidInput(format!(
+                    "Failed to parse API response: {}",
+                    e
+                )))
+            }
+        }
     }
 }
 
@@ -126,31 +187,58 @@ impl WazzupApiService {
 
     // --- Contacts ---
     
-    pub async fn get_contacts(&self, api_key: &str) -> Result<ContactListResponse, AppError> {
-        self.request(api_key, Method::GET, "/contacts", None::<&()>).await
+    pub async fn get_contacts(&self, api_key: &str) -> Result<WazzupContactListResponse, AppError> {
+        // Default offset to 0 if not provided
+        self.get_contacts_with_offset(api_key, 0).await
+    }
+    
+    pub async fn get_contacts_with_offset(&self, api_key: &str, offset: i32) -> Result<WazzupContactListResponse, AppError> {
+        let path = format!("/v3/contacts?offset={}", offset);
+        self.request_contacts_api(api_key, Method::GET, &path, None::<&()>).await
+    }
+    
+    pub async fn create_contacts(
+        &self,
+        api_key: &str,
+        contacts: Vec<WazzupContact>,
+    ) -> Result<(), AppError> {
+        // API Wazzup принимает массив контактов напрямую, не в обертке
+        let _: Value = self.request_contacts_api(api_key, Method::POST, "/v3/contacts", Some(&contacts)).await?;
+        Ok(())
     }
     
     pub async fn create_contact(
         &self,
         api_key: &str,
-        request: &CreateContactRequest,
-    ) -> Result<Contact, AppError> {
-        self.request(api_key, Method::POST, "/contacts", Some(request)).await
+        contact: &WazzupContact,
+    ) -> Result<WazzupContact, AppError> {
+        // Create a single contact by wrapping it in a vector
+        let contacts = vec![contact.clone()];
+        let _: Value = self.request_contacts_api(api_key, Method::POST, "/v3/contacts", Some(&contacts)).await?;
+        // Return the contact that was passed in (API doesn't return the created contact)
+        Ok(contact.clone())
+    }
+    
+    pub async fn get_contact(&self, api_key: &str, contact_id: &str) -> Result<WazzupContact, AppError> {
+        let path = format!("/v3/contacts/{}", contact_id);
+        self.request_contacts_api(api_key, Method::GET, &path, None::<&()>).await
     }
     
     pub async fn update_contact(
         &self,
         api_key: &str,
         contact_id: &str,
-        request: &UpdateContactRequest,
-    ) -> Result<Contact, AppError> {
-        let path = format!("/contacts/{}", contact_id);
-        self.request(api_key, Method::PUT, &path, Some(request)).await
+        contact: &WazzupContact,
+    ) -> Result<WazzupContact, AppError> {
+        let path = format!("/v3/contacts/{}", contact_id);
+        let _: Value = self.request_contacts_api(api_key, Method::PUT, &path, Some(contact)).await?;
+        // Return the contact that was passed in (API doesn't return the updated contact)
+        Ok(contact.clone())
     }
     
     pub async fn delete_contact(&self, api_key: &str, contact_id: &str) -> Result<(), AppError> {
-        let path = format!("/contacts/{}", contact_id);
-        let _: Value = self.request(api_key, Method::DELETE, &path, None::<&()>).await?;
+        let path = format!("/v3/contacts/{}", contact_id);
+        let _: Value = self.request_contacts_api(api_key, Method::DELETE, &path, None::<&()>).await?;
         Ok(())
     }
     
@@ -179,8 +267,8 @@ impl WazzupApiService {
         &self,
         api_key: &str,
         request: &WebhookSubscriptionRequest,
-    ) -> Result<WebhookSubscriptionResponse, AppError> {
-        self.request_patch_webhooks(api_key, "/v3/webhooks", request).await
+    ) -> Result<String, AppError> {
+        self.request_patch_webhooks_string(api_key, "/v3/webhooks", request).await
     }
 }
 
@@ -258,37 +346,42 @@ pub struct UpdateUserSettingsRequest {
     pub user_roles: Option<Vec<UserRole>>,
 }
 
-// Contacts
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+// Contacts - согласно документации Wazzup API
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct Contact {
-    pub id: Option<String>,
-    pub name: Option<String>,
-    pub phone: Option<String>,
-    pub email: Option<String>,
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+pub struct WazzupContactData {
+    pub chat_type: String,  // whatsapp, telegram, etc.
+    pub chat_id: String,    // ID чата в мессенджере
+    pub username: Option<String>, // для Telegram
+    pub phone: Option<String>,    // для Telegram
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WazzupContact {
+    pub id: String,                           // ID контакта в CRM
+    pub responsible_user_id: String,          // ID ответственного пользователя  
+    pub name: String,                         // Имя контакта
+    pub contact_data: Vec<WazzupContactData>, // Массив контактных данных
+    pub uri: Option<String>,                  // Ссылка на контакт в CRM
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ContactListResponse {
-    pub contacts: Option<Vec<Contact>>,
+pub struct WazzupContactListResponse {
     pub count: i32,
+    pub data: Vec<WazzupContact>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct CreateContactRequest {
-    pub name: Option<String>,
-    pub phone: Option<String>,
-    pub email: Option<String>,
+pub struct CreateWazzupContactsRequest {
+    pub contacts: Vec<WazzupContact>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct UpdateContactRequest {
-    pub name: Option<String>,
-    pub phone: Option<String>,
-    pub email: Option<String>,
-}
+// API-compatible aliases for the contacts API
+pub type Contact = WazzupContact;
+pub type ContactListResponse = WazzupContactListResponse;
+pub type CreateContactRequest = WazzupContact;
+pub type UpdateContactRequest = WazzupContact;
 
 // Messages
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

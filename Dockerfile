@@ -1,7 +1,7 @@
 # Use a multi-stage build to keep the final image small
 
 # Stage 1: Build the application
-FROM rust:1.85 as builder
+FROM rust:1.85 AS builder
 
 # Set the working directory
 WORKDIR /app
@@ -36,4 +36,4 @@ COPY --from=builder /app/target/release/admin-cli /usr/local/bin/admin-cli
 EXPOSE 8080
 
 # Set the default command to run the main web server binary
-CMD ["wazzup-rust"]
+CMD ["main"]

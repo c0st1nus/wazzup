@@ -50,7 +50,7 @@ async fn get_contacts(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let response = wazzup_api.get_contacts(&api_key).await?;
     Ok(HttpResponse::Ok().json(response))
@@ -77,7 +77,7 @@ async fn create_contact(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let response = wazzup_api.create_contact(&api_key, &body.into_inner()).await?;
     Ok(HttpResponse::Created().json(response))
@@ -105,7 +105,7 @@ async fn update_contact(
 ) -> Result<HttpResponse, AppError> {
     let (company_id, contact_id) = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let response = wazzup_api
         .update_contact(&api_key, &contact_id, &body.into_inner())
@@ -133,7 +133,7 @@ async fn delete_contact(
 ) -> Result<HttpResponse, AppError> {
     let (company_id, contact_id) = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     wazzup_api.delete_contact(&api_key, &contact_id).await?;
     Ok(HttpResponse::NoContent().finish())

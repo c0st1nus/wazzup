@@ -12,7 +12,7 @@ mod errors;
 mod services;
 
 use crate::config::Config;
-use crate::api::{channels, companies, messages, users, webhooks, contacts};
+use crate::api::{channels, chats, companies, messages, users, webhooks, contacts};
 use crate::database::{client::models as client_models, main::models as main_models};
 use crate::services::wazzup_api;
 
@@ -46,6 +46,10 @@ async fn main() -> std::io::Result<()> {
             channels::delete_channel,
             channels::generate_wrapped_iframe_link,
             channels::handle_channel_added,
+            // Chats
+            chats::get_chats,
+            chats::get_chat_details,
+            chats::get_chat_messages,
             // Messages
             messages::send_message,
             messages::get_messages,
@@ -74,6 +78,12 @@ async fn main() -> std::io::Result<()> {
                 channels::ChannelAddedNotification,
                 webhooks::ConnectWebhooksResponse,
                 
+                // --- Chats API Structs ---
+                chats::ChatResponse,
+                chats::MessageInfo,
+                chats::ChatListResponse,
+                chats::ChatDetailsResponse,
+                
                 // --- Wazzup API Structs ---
                 wazzup_api::ChannelListResponse,
                 wazzup_api::ChannelInfo,
@@ -91,6 +101,7 @@ async fn main() -> std::io::Result<()> {
         tags(
             (name = "Companies", description = "Company management endpoints"),
             (name = "Channels", description = "Channel management endpoints"),
+            (name = "Chats", description = "Chat management endpoints (local data only)"),
             (name = "Messages", description = "Message sending and retrieval endpoints"),
             (name = "Users", description = "User management endpoints"),
             (name = "Webhooks", description = "Endpoints for receiving Wazzup webhooks")
@@ -114,6 +125,7 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/api")
                     .configure(companies::init_routes)
                     .configure(channels::init_routes)
+                    .configure(chats::init_routes)
                     .configure(messages::init_routes)
                     .configure(users::init_routes)
                     .configure(contacts::init_routes)

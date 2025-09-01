@@ -164,7 +164,7 @@ async fn get_settings(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let settings = wazzup_api.get_user_settings(&api_key).await?;
     Ok(HttpResponse::Ok().json(settings))
@@ -192,7 +192,7 @@ async fn update_settings(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     wazzup_api.update_user_settings(&api_key, &body.into_inner()).await?;
     Ok(HttpResponse::Ok().finish())

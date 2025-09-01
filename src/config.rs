@@ -4,8 +4,8 @@ use serde::Deserialize;
 pub struct Config {
     pub host: String,
     pub port: u16,
-    pub wazzup_api_base_url: String,
     pub client_database_url_template: String,
+    pub public_url: Option<String>,
 }
 
 impl Config {

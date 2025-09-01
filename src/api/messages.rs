@@ -52,7 +52,7 @@ async fn send_message(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let response = wazzup_api.send_message(&api_key, &body.into_inner()).await?;
 
@@ -79,7 +79,7 @@ async fn get_messages(
 ) -> Result<HttpResponse, AppError> {
     let (company_id, chat_id) = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let response = wazzup_api.get_messages(&api_key, &chat_id).await?;
 
@@ -105,7 +105,7 @@ async fn get_unread_count(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let response = wazzup_api.get_unread_count(&api_key).await?;
 

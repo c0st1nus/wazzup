@@ -136,8 +136,12 @@ CREATE TABLE IF NOT EXISTS "public"."wazzup_messages" (
     "type" varchar NOT NULL,
     "content" text NOT NULL,
     "chat_id" varchar NOT NULL,
+    "created_at" timestamptz NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_wazzup_messages_id" PRIMARY KEY ("id")
 );
+-- Indexes for wazzup_messages
+CREATE INDEX IF NOT EXISTS "idx_wazzup_messages_created_at" ON "public"."wazzup_messages" ("created_at");
+CREATE INDEX IF NOT EXISTS "idx_wazzup_messages_duplicate_check" ON "public"."wazzup_messages" ("chat_id", "type", "content");
 
 CREATE TABLE IF NOT EXISTS "public"."services" (
     "id" BIGSERIAL,

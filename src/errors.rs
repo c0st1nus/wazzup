@@ -10,6 +10,9 @@ pub enum AppError {
     #[error("Reqwest error: {0}")]
     ReqwestError(#[from] reqwest::Error),
 
+    #[error("JSON error: {0}")]
+    JsonError(#[from] serde_json::Error),
+
     #[error("Not found: {0}")]
     NotFound(String),
 
@@ -23,7 +26,7 @@ pub enum AppError {
 impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
         match self {
-            AppError::DbError(_) | AppError::ReqwestError(_) | AppError::Internal => {
+            AppError::DbError(_) | AppError::ReqwestError(_) | AppError::JsonError(_) | AppError::Internal => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             AppError::NotFound(_) => StatusCode::NOT_FOUND,

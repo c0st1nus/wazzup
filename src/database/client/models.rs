@@ -397,6 +397,8 @@ pub mod wazzup_message {
         pub r#type: String,
         pub content: String,
         pub chat_id: String,
+        #[schema(value_type = String, format = DateTime)]
+        pub created_at: DateTimeUtc,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

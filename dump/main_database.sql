@@ -14,3 +14,17 @@ CREATE TABLE IF NOT EXISTS "companies" (
     "max_locations" bigint,
     CONSTRAINT "pk_table_1_id" PRIMARY KEY ("id")
 );
+
+-- Migration to add created_at column to wazzup_messages table
+-- Run this on all client databases
+
+ALTER TABLE wazzup_messages 
+ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT NOW();
+
+-- Create an index on created_at for performance
+CREATE INDEX IF NOT EXISTS idx_wazzup_messages_created_at 
+ON wazzup_messages(created_at);
+
+-- Create a composite index for duplicate detection
+CREATE INDEX IF NOT EXISTS idx_wazzup_messages_duplicate_check 
+ON wazzup_messages(chat_id, type, content);

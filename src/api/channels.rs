@@ -116,7 +116,7 @@ async fn get_channels(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let channels_response = wazzup_api.get_channels(&api_key).await?;
 
@@ -155,7 +155,7 @@ async fn delete_channel(
 ) -> Result<HttpResponse, AppError> {
     let (company_id, transport, channel_id) = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
     
     wazzup_api.delete_channel(&api_key, &transport, &channel_id, query.delete_chats).await?;
 
@@ -206,7 +206,7 @@ async fn generate_wrapped_iframe_link(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     let original_response = wazzup_api.generate_channel_iframe_link(&api_key, &body).await?;
     let original_link = original_response.link.ok_or_else(|| AppError::Internal)?;
@@ -258,7 +258,7 @@ async fn handle_channel_added(
     actix_web::rt::spawn(async move {
         match get_company_api_key(company_id, &state_clone.db).await {
             Ok(api_key) => {
-                let wazzup_api = wazzup_api::WazzupApiService::new(state_clone.config.wazzup_api_base_url.clone());
+                let wazzup_api = wazzup_api::WazzupApiService::new();
                 if let Ok(response) = wazzup_api.get_channels(&api_key).await {
                     if let Err(e) = sync_channels_to_db(company_id, &response, &state_clone).await {
                          log::error!("Failed to sync channels after 'added' notification: {}", e);
@@ -300,7 +300,7 @@ async fn reinitialize_channel(
 ) -> Result<HttpResponse, AppError> {
     let (company_id, transport, channel_id) = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new(app_state.config.wazzup_api_base_url.clone());
+    let wazzup_api = wazzup_api::WazzupApiService::new();
 
     wazzup_api.reinitialize_channel(&api_key, &transport, &channel_id).await?;
 
