@@ -193,9 +193,9 @@ async fn test_webhook(
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/webhook")
-            .service(validate_webhook)
-            .service(handle_webhook)
             .service(connect_webhooks)
             .service(test_webhook)
+            .service(validate_webhook)
+            .service(handle_webhook)
     );
 }
