@@ -42,7 +42,7 @@ pub struct UpdateCompanyDto {
         (status = 200, description = "List all companies", body = [main_models::Model])
     )
 )]
-#[get("/")]
+#[get("")]
 async fn get_companies(data: web::Data<AppState>) -> Result<HttpResponse, AppError> {
     let companies = main_models::Entity::find().all(&data.db).await?;
     Ok(HttpResponse::Ok().json(companies))
@@ -85,7 +85,7 @@ async fn get_company_by_id(
         (status = 201, description = "Company created successfully", body = main_models::Model)
     )
 )]
-#[post("/")]
+#[post("")]
 async fn create_company(
     data: web::Data<AppState>,
     new_company_dto: web::Json<CreateCompanyDto>,
