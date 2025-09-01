@@ -217,7 +217,7 @@ async fn generate_wrapped_iframe_link(
     let encoded_original_link: String = form_urlencoded::byte_serialize(original_link.as_bytes()).collect();
 
     let wrapped_link = format!(
-        "{}://{}/channel-setup.html?companyId={}&transport={}&originalLink={}",
+        "{}://{}/static/channel-setup.html?companyId={}&transport={}&originalLink={}",
         scheme,
         host,
         company_id,

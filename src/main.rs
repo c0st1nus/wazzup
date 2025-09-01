@@ -1,4 +1,5 @@
 use actix_web::{web, App, HttpServer, middleware};
+use actix_files as fs;
 use sea_orm::{Database, DatabaseConnection};
 use std::env;
 use utoipa::OpenApi;
@@ -121,6 +122,11 @@ async fn main() -> std::io::Result<()> {
                 db: db.clone(),
                 config: config.clone(),
             }))
+            .service(
+                fs::Files::new("/static", "./static")
+                    .show_files_listing()
+                    .use_last_modified(true)
+            )
             .service(
                 web::scope("/api")
                     .wrap(middleware::NormalizePath::trim())

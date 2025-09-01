@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Добавление канала - Wazzup24</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .status {
+            padding: 15px 20px;
+            margin: 0;
+            font-weight: 500;
+        }
+        .status.loading {
+            background-color: #3498db;
+            color: white;
+        }
+        .status.success {
+            background-color: #27ae60;
+            color: white;
+        }
+        .status.error {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .iframe-container {
+            position: relative;
+            width: 100%;
+            height: 600px;
+            border: none;
+        }
+        .iframe-container iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .footer {
+            padding: 20px;
+            text-align: center;
+            color: #7f8c8d;
+            border-top: 1px solid #ecf0f1;
+        }
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #2c3e50;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Добавление канала связи</h1>
+        </div>
+        
+        <div class="iframe-container">
+            <div id="loading-overlay" class="loading-overlay">
+                <div>Загрузка...</div>
+            </div>
+            <iframe id="channel-iframe" src="" allow="camera; microphone"></iframe>
+        </div>
+    </div>
+
+    <script>
+        // Обертываем весь код в IIFE (Immediately Invoked Function Expression)
+        (function() {
+            // Получаем параметры из URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const companyId = urlParams.get('companyId');
+            const transport = urlParams.get('transport');
+            const originalLink = urlParams.get('originalLink');
+            
+            const statusElement = document.getElementById('status');
+            const iframe = document.getElementById('channel-iframe');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            
+            // Проверяем наличие необходимых параметров
+            if (!companyId || !transport || !originalLink) {
+                console.error('Ошибка параметров');
+                loadingOverlay.textContent = 'Ошибка параметров';
+                return;
+            }
+        
+        // Устанавливаем источник iframe
+        iframe.src = decodeURIComponent(originalLink);
+        
+        // Обработчик загрузки iframe
+        iframe.onload = function() {
+            loadingOverlay.classList.add('hidden');
+            console.log('Iframe loaded successfully');
+        };
+        
+        iframe.onerror = function() {
+            console.log('Iframe failed to load');
+            loadingOverlay.textContent = 'Ошибка загрузки';
+        };
+        
+        // Функция для отслеживания успешного добавления канала
+        let pollInterval;
+        let pollCount = 0;
+        const maxPollCount = 60; // 5 минут при интервале 5 секунд
+        
+        function startChannelPolling() {
+            pollInterval = setInterval(async () => {
+                pollCount++;
+                
+                try {
+                    // Проверяем, был ли добавлен новый канал
+                    const response = await fetch(`/api/company/${companyId}/channel/list`);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        
+                        // Ищем новые каналы нужного типа
+                        const newChannels = data.channels?.filter(channel => 
+                            channel.transport === transport && 
+                            channel.state === 'connected'
+                        );
+                        
+                        if (newChannels && newChannels.length > 0) {
+                            // Канал успешно добавлен!
+                            await handleChannelAdded(newChannels[0]);
+                            clearInterval(pollInterval);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking channels:', error);
+                }
+                
+                // Останавливаем опрос после максимального количества попыток
+                if (pollCount >= maxPollCount) {
+                    clearInterval(pollInterval);
+                    console.error('Polling timed out');
+                }
+            }, 5000); // Проверяем каждые 5 секунд
+        }
+        
+        async function handleChannelAdded(channel) {
+            try {
+                console.log('Channel added:', channel);
+                
+                // Уведомляем наш API о добавлении канала
+                const response = await fetch(`/api/company/${companyId}/channel-wrapper/channel-added/${transport}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        channelId: channel.id,
+                        state: channel.state,
+                        timestamp: Date.now()
+                    })
+                });
+                
+                if (response.ok) {
+                    
+                    // Автоматически закрываем окно через 3 секунды
+                    setTimeout(() => {
+                        if (window.opener) {
+                            window.close();
+                        } else {
+                            window.location.href = '/';
+                        }
+                    }, 3000);
+                } else {
+                    console.error('Error notifying channel addition:', response.statusText);
+                }
+            } catch (error) {
+                console.error('Error notifying channel addition:', error);
+            }
+        }
+        
+        // Начинаем отслеживание через 10 секунд после загрузки
+        setTimeout(() => {
+            startChannelPolling();
+        }, 10000);
+        
+        // Обработка сообщений от iframe (если Wazzup24 их отправляет)
+        window.addEventListener('message', function(event) {
+            // Проверяем домен отправителя (безопасность)
+            if (event.origin !== 'https://tech.wazzup24.com') {
+                return;
+            }
+            
+            // Обрабатываем сообщения от Wazzup24
+            if (event.data && event.data.type === 'channel_added') {
+                clearInterval(pollInterval);
+                handleChannelAdded({
+                    id: event.data.channelId,
+                    state: 'connected'
+                });
+            }
+        });
+        
+        console.log('Channel Setup Wrapper loaded', {
+            companyId,
+            transport,
+            originalLink: decodeURIComponent(originalLink)
+        });
+        })(); // Закрываем IIFE
+    </script>
+</body>
+</html>
