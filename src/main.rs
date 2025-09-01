@@ -117,7 +117,6 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
-            .wrap(middleware::NormalizePath::always())
             .app_data(web::Data::new(AppState {
                 db: db.clone(),
                 config: config.clone(),

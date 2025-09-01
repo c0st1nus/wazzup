@@ -11,7 +11,7 @@ use crate::{
 
 #[utoipa::path(
     get,
-    path = "/api/contacts/{companyId}/",
+    path = "/api/contacts/{companyId}",
     tag = "Contacts",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -36,7 +36,7 @@ async fn get_contacts(
 
 #[utoipa::path(
     post,
-    path = "/api/contacts/{companyId}/",
+    path = "/api/contacts/{companyId}",
     tag = "Contacts",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -63,7 +63,7 @@ async fn create_contact(
 
 #[utoipa::path(
     put,
-    path = "/api/contacts/{companyId}/{contactId}/",
+    path = "/api/contacts/{companyId}/{contactId}",
     tag = "Contacts",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
@@ -93,7 +93,7 @@ async fn update_contact(
 
 #[utoipa::path(
     delete,
-    path = "/api/contacts/{companyId}/{contactId}/",
+    path = "/api/contacts/{companyId}/{contactId}",
     tag = "Contacts",
     params(
         ("companyId" = i64, Path, description = "Company ID"),

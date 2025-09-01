@@ -81,7 +81,7 @@ async fn get_last_message_for_chat(
 
 #[utoipa::path(
     get,
-    path = "/api/chats/",
+    path = "/api/chats",
     tag = "Chats",
     responses(
         (status = 200, description = "List of chats with basic information", body = ChatListResponse)
@@ -121,7 +121,7 @@ async fn get_chats(
 
 #[utoipa::path(
     get,
-    path = "/api/chats/{chatId}/",
+    path = "/api/chats/{chatId}",
     tag = "Chats",
     params(
         ("chatId" = String, Path, description = "Chat ID")
@@ -177,7 +177,7 @@ async fn get_chat_details(
 
 #[utoipa::path(
     get,
-    path = "/api/chats/{chatId}/messages/",
+    path = "/api/chats/{chatId}/messages",
     tag = "Chats",
     params(
         ("chatId" = String, Path, description = "Chat ID"),

@@ -99,7 +99,7 @@ async fn sync_channels_to_db(
 
 #[utoipa::path(
     get,
-    path = "/api/channels/{companyId}/",
+    path = "/api/channels/{companyId}",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -134,7 +134,7 @@ async fn get_channels(
 
 #[utoipa::path(
     delete,
-    path = "/api/channels/{companyId}/{transport}/{channelId}/",
+    path = "/api/channels/{companyId}/{transport}/{channelId}",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
@@ -186,7 +186,7 @@ async fn delete_channel(
 
 #[utoipa::path(
     post,
-    path = "/api/channels/{companyId}/iframe-link/",
+    path = "/api/channels/{companyId}/iframe-link",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -231,7 +231,7 @@ async fn generate_wrapped_iframe_link(
 
 #[utoipa::path(
     post,
-    path = "/api/channels/{companyId}/added/{transport}/",
+    path = "/api/channels/{companyId}/added/{transport}",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
@@ -281,7 +281,7 @@ async fn handle_channel_added(
 // --- НОВЫЙ ЭНДПОИНТ ---
 #[utoipa::path(
     post,
-    path = "/api/channels/{companyId}/{transport}/{channelId}/reinit/",
+    path = "/api/channels/{companyId}/{transport}/{channelId}/reinit",
     tag = "Channels",
     params(
         ("companyId" = i64, Path, description = "Company ID"),

@@ -10,7 +10,7 @@ use crate::{
 
 #[utoipa::path(
     post,
-    path = "/api/messages/{companyId}/send/",
+    path = "/api/messages/{companyId}/send",
     tag = "Messages",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -38,7 +38,7 @@ async fn send_message(
 
 #[utoipa::path(
     get,
-    path = "/api/messages/{companyId}/chat/{chatId}/",
+    path = "/api/messages/{companyId}/chat/{chatId}",
     tag = "Messages",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
@@ -65,7 +65,7 @@ async fn get_messages(
 
 #[utoipa::path(
     get,
-    path = "/api/messages/{companyId}/unread-count/",
+    path = "/api/messages/{companyId}/unread-count",
     tag = "Messages",
     params(
         ("companyId" = i64, Path, description = "Company ID")

@@ -27,7 +27,7 @@ pub struct ConnectWebhooksResponse {
 
 #[utoipa::path(
     post,
-    path = "/api/webhook/{id}/",
+    path = "/api/webhook/{id}",
     tag = "Webhooks",
     params(
         ("id" = i64, Path, description = "Company ID")
@@ -54,7 +54,7 @@ async fn handle_webhook(
 
 #[utoipa::path(
     get,
-    path = "/api/webhook/{id}/connect/",
+    path = "/api/webhook/{id}/connect",
     tag = "Webhooks",
     params(
         ("id" = i64, Path, description = "Company ID")
@@ -123,7 +123,7 @@ async fn connect_webhooks(
 
 #[utoipa::path(
     post,
-    path = "/api/webhook/{id}/test/",
+    path = "/api/webhook/{id}/test",
     tag = "Webhooks",
     params(
         ("id" = i64, Path, description = "Company ID")
