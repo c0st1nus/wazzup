@@ -74,7 +74,7 @@ async fn get_company_api_key(
 
 #[utoipa::path(
     get,
-    path = "/api/users/{companyId}",
+    path = "/api/users/{companyId}/",
     tag = "Users",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -98,7 +98,7 @@ async fn get_users(
 
 #[utoipa::path(
     post,
-    path = "/api/users/{companyId}",
+    path = "/api/users/{companyId}/",
     tag = "Users",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -147,7 +147,7 @@ async fn create_user(
 
 #[utoipa::path(
     get,
-    path = "/api/users/{companyId}/settings",
+    path = "/api/users/{companyId}/settings/",
     tag = "Users",
     params(
         ("companyId" = i64, Path, description = "Company ID")
@@ -173,7 +173,7 @@ async fn get_settings(
 
 #[utoipa::path(
     patch,
-    path = "/api/users/{companyId}/settings",
+    path = "/api/users/{companyId}/settings/",
     tag = "Users",
     params(
         ("companyId" = i64, Path, description = "Company ID")

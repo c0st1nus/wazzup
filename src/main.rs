@@ -1,4 +1,4 @@
-use actix_web::{web, App, HttpServer};
+use actix_web::{web, App, HttpServer, middleware};
 use sea_orm::{Database, DatabaseConnection};
 use std::env;
 use utoipa::OpenApi;
@@ -117,6 +117,7 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(middleware::NormalizePath::always())
             .app_data(web::Data::new(AppState {
                 db: db.clone(),
                 config: config.clone(),

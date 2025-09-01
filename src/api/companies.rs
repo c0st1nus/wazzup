@@ -36,7 +36,7 @@ pub struct UpdateCompanyDto {
 
 #[utoipa::path(
     get,
-    path = "/api/companies",
+    path = "/api/companies/",
     tag = "Companies",
     responses(
         (status = 200, description = "List all companies", body = [main_models::Model])
@@ -51,7 +51,7 @@ async fn get_companies(data: web::Data<AppState>) -> Result<HttpResponse, AppErr
 
 #[utoipa::path(
     get,
-    path = "/api/companies/{id}",
+    path = "/api/companies/{id}/",
     tag = "Companies",
     params(
         ("id" = i64, Path, description = "Company ID")
@@ -78,7 +78,7 @@ async fn get_company_by_id(
 
 #[utoipa::path(
     post,
-    path = "/api/companies",
+    path = "/api/companies/",
     tag = "Companies",
     request_body = CreateCompanyDto,
     responses(
@@ -109,7 +109,7 @@ async fn create_company(
 
 #[utoipa::path(
     put,
-    path = "/api/companies/{id}",
+    path = "/api/companies/{id}/",
     tag = "Companies",
     params(
         ("id" = i64, Path, description = "Company ID")
@@ -148,7 +148,7 @@ async fn update_company(
 
 #[utoipa::path(
     delete,
-    path = "/api/companies/{id}",
+    path = "/api/companies/{id}/",
     tag = "Companies",
     params(
         ("id" = i64, Path, description = "Company ID")
