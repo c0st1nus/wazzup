@@ -126,6 +126,7 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(middleware::Compress::default())
             .app_data(web::Data::new(AppState {
                 db: db.clone(),
                 config: config.clone(),
@@ -152,6 +153,7 @@ async fn main() -> std::io::Result<()> {
                     .url("/api-docs/openapi.json", ApiDoc::openapi()),
             )
     })
+    .workers(num_cpus::get())
     .bind((host, port))?
     .run()
     .await
