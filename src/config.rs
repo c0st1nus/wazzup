@@ -39,8 +39,8 @@ impl Config {
             return Err(config::ConfigError::Message("Database URL template must contain {db_name} placeholder".to_string()));
         }
         
-        // Проверяем, что URL не содержит очевидно небезопасных элементов
-        if self.client_database_url_template.contains("..") || self.client_database_url_template.contains("//") {
+        // Проверяем, что URL не содержит очевидно небезопасных элементов path traversal
+        if self.client_database_url_template.contains("..") {
             return Err(config::ConfigError::Message("Database URL template contains potentially unsafe path traversal".to_string()));
         }
         
