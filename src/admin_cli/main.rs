@@ -213,6 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     "client" => {
                         execute_sql_file(&db, "dump/client_database.sql").await?;
+                        execute_sql_file(&db, "dump/data_client_database.sql").await?;
                     }
                     _ => {}
                 }

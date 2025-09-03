@@ -287,9 +287,9 @@ pub mod user {
         pub email: String,
         pub password_hash: String,
         pub salt: String,
-        pub role: String, // bot; manager; admin; quality_controll
+        pub role: String, // bot; manager; admin; quality_control
         pub resource_id: Option<i64>,
-        pub location: Option<i64>,
+        pub location_id: Option<i64>,
         #[schema(value_type = String, format = DateTime)]
         pub created_at: DateTimeUtc,
     }
