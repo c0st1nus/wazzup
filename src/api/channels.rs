@@ -33,8 +33,13 @@ pub struct ChannelAddedNotification {
 
 #[derive(Deserialize, IntoParams)]
 struct DeleteChannelQuery {
-    #[serde(default)]
+    /// Whether to delete chats along with the channel. Default is true.
+    #[serde(default = "default_delete_chats")]
     delete_chats: bool,
+}
+
+fn default_delete_chats() -> bool {
+    true
 }
 
 // --- Helper Functions ---
@@ -148,6 +153,9 @@ async fn delete_channel(
     query: web::Query<DeleteChannelQuery>,
 ) -> Result<HttpResponse, AppError> {
     let (company_id, transport, channel_id) = path.into_inner();
+    log::info!("Delete channel request: company_id={}, transport={}, channel_id={}, delete_chats={}", 
+               company_id, transport, channel_id, query.delete_chats);
+    
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
     let wazzup_api = wazzup_api::WazzupApiService::new();
     

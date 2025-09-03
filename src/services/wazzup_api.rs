@@ -29,10 +29,14 @@ impl WazzupApiService {
         body: Option<&T>,
     ) -> Result<R, AppError> {
         let url = format!("{}{}", self.base_url, path);
-        let mut request_builder = self.client.request(method, &url).bearer_auth(api_key);
+        let mut request_builder = self.client.request(method.clone(), &url).bearer_auth(api_key);
 
         if let Some(body_data) = body {
+            let body_json = serde_json::to_string(body_data).unwrap_or_else(|_| "Failed to serialize body".to_string());
+            log::info!("Sending {} request to {}: {}", method, url, body_json);
             request_builder = request_builder.json(body_data);
+        } else {
+            log::info!("Sending {} request to {} (no body)", method, url);
         }
 
         let response = match request_builder.send().await {
@@ -176,6 +180,7 @@ impl WazzupApiService {
     pub async fn delete_channel(&self, api_key: &str, transport: &str, channel_id: &str, delete_chats: bool) -> Result<(), AppError> {
         let path = format!("/channels/{}/{}", transport, channel_id);
         let body = serde_json::json!({ "deleteChats": delete_chats });
+        log::info!("Deleting channel: transport={}, channel_id={}, deleteChats={}", transport, channel_id, delete_chats);
         let _: Value = self.request(api_key, Method::DELETE, &path, Some(&body)).await?;
         Ok(())
     }
