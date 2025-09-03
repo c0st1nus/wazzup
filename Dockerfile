@@ -32,6 +32,9 @@ WORKDIR /app
 COPY --from=builder /app/target/release/main /usr/local/bin/main
 COPY --from=builder /app/target/release/admin-cli /usr/local/bin/admin-cli
 
+# Copy static files
+COPY static ./static
+
 # Expose the port for the web server (assuming default Actix Web port)
 EXPOSE 8080
 
