@@ -227,19 +227,14 @@ async fn get_chats(
     }))
 }
 
-#[derive(Deserialize, ToSchema)]
-struct ChatDetailsQuery {
-    user_id: i64,
-}
-
 #[utoipa::path(
     get,
-    path = "/api/chats/{companyId}/{chatId}",
+    path = "/api/chats/{companyId}/{chatId}/{user_id}",
     tag = "Chats",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
         ("chatId" = String, Path, description = "Chat ID"),
-        ("user_id" = i64, Query, description = "User ID for access validation")
+        ("user_id" = i64, Path, description = "User ID for access validation")
     ),
     responses(
         (status = 200, description = "Chat details with all messages", body = ChatDetailsResponse),
@@ -247,14 +242,12 @@ struct ChatDetailsQuery {
         (status = 403, description = "Access denied")
     )
 )]
-#[get("/{companyId}/{chatId}")]
+#[get("/{companyId}/{chatId}/{user_id}")]
 async fn get_chat_details(
     app_state: web::Data<AppState>,
-    path: web::Path<(i64, String)>,
-    query: web::Query<ChatDetailsQuery>,
+    path: web::Path<(i64, String, i64)>,
 ) -> Result<HttpResponse, AppError> {
-    let (company_id, chat_id) = path.into_inner();
-    let user_id = query.user_id;
+    let (company_id, chat_id, user_id) = path.into_inner();
 
     // Get client database connection using pool manager
     let client_db = crate::api::helpers::get_client_db_connection(company_id, &app_state).await?;
@@ -334,19 +327,18 @@ async fn get_chat_details(
 
 #[derive(Deserialize, ToSchema)]
 struct ChatMessagesQuery {
-    user_id: i64,
     limit: Option<i64>,
     offset: Option<i64>,
 }
 
 #[utoipa::path(
     get,
-    path = "/api/chats/{companyId}/{chatId}/messages",
+    path = "/api/chats/{companyId}/{chatId}/{user_id}/messages",
     tag = "Chats",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
         ("chatId" = String, Path, description = "Chat ID"),
-        ("user_id" = i64, Query, description = "User ID for access validation"),
+        ("user_id" = i64, Path, description = "User ID for access validation"),
         ("limit" = Option<i64>, Query, description = "Maximum number of messages to return"),
         ("offset" = Option<i64>, Query, description = "Number of messages to skip")
     ),
@@ -359,11 +351,10 @@ struct ChatMessagesQuery {
 #[get("/{companyId}/{chatId}/messages")]
 async fn get_chat_messages(
     app_state: web::Data<AppState>,
-    path: web::Path<(i64, String)>,
+    path: web::Path<(i64, String, i64)>,
     query: web::Query<ChatMessagesQuery>,
 ) -> Result<HttpResponse, AppError> {
-    let (company_id, chat_id) = path.into_inner();
-    let user_id = query.user_id;
+    let (company_id, chat_id, user_id) = path.into_inner();
 
     // Get client database connection using pool manager
     let client_db = crate::api::helpers::get_client_db_connection(company_id, &app_state).await?;
