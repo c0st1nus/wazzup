@@ -43,6 +43,13 @@ async fn validate_webhook(
     path: web::Path<i64>,
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
+    
+    // Базовая валидация company_id
+    if company_id <= 0 {
+        log::error!("Invalid company_id for validation: {}", company_id);
+        return Err(AppError::InvalidInput("Invalid company ID".to_string()));
+    }
+    
     log::info!("Webhook validation request for company {}", company_id);
     
     // Проверяем, что компания существует
@@ -80,6 +87,20 @@ async fn handle_webhook(
     body: web::Json<webhook_handler::WebhookRequest>,
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
+    
+    // Базовая валидация company_id
+    if company_id <= 0 {
+        log::error!("Invalid company_id: {}", company_id);
+        return Err(AppError::InvalidInput("Invalid company ID".to_string()));
+    }
+    
+    // Ограничиваем размер payload
+    let json_string = serde_json::to_string(&body)?;
+    if json_string.len() > 1024 * 1024 {  // 1MB limit
+        log::error!("Webhook payload too large: {} bytes", json_string.len());
+        return Err(AppError::InvalidInput("Webhook payload too large".to_string()));
+    }
+    
     webhook_handler::handle_webhook(company_id, body.into_inner(), &app_state.db, &app_state.config)
         .await?;
     Ok(HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })))

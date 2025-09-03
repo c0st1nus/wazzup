@@ -27,19 +27,14 @@ pub async fn get_company_api_key(
 }
 
 /// Получает подключение к базе данных клиента по ID компании.
+/// Использует pool manager для оптимизации подключений.
 pub async fn get_client_db_connection(
     company_id: i64,
     app_state: &web::Data<AppState>,
 ) -> Result<DatabaseConnection, AppError> {
-    let company = main_models::Entity::find_by_id(company_id)
-        .one(&app_state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
-    
-    let client_db_url = app_state
-        .config
-        .client_database_url_template
-        .replace("{db_name}", &company.database_name);
-        
-    Ok(sea_orm::Database::connect(&client_db_url).await?)
+    crate::database::pool_manager::get_client_db_from_pool_manager(
+        &app_state.client_db_pool,
+        company_id,
+        &app_state.db
+    ).await
 }

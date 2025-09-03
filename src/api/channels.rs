@@ -65,14 +65,8 @@ async fn sync_channels_to_db(
     channel_response: &ChannelListResponse,
     app_state: &web::Data<AppState>,
 ) -> Result<(), AppError> {
-    let company = main_models::Entity::find_by_id(company_id)
-        .one(&app_state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
-
-    // Получаем подключение к БД клиента
-    let client_db_url = app_state.config.client_database_url_template.replace("{db_name}", &company.database_name);
-    let client_db = sea_orm::Database::connect(&client_db_url).await?;
+    // Получаем подключение к БД клиента используя pool manager
+    let client_db = crate::api::helpers::get_client_db_connection(company_id, app_state).await?;
 
     if let Some(channels) = &channel_response.channels {
         for channel_info in channels {
@@ -159,9 +153,8 @@ async fn delete_channel(
     
     wazzup_api.delete_channel(&api_key, &transport, &channel_id, query.delete_chats).await?;
 
-    let company = main_models::Entity::find_by_id(company_id).one(&app_state.db).await?.unwrap();
-    let client_db_url = app_state.config.client_database_url_template.replace("{db_name}", &company.database_name);
-    let client_db = sea_orm::Database::connect(&client_db_url).await?;
+    // Получаем подключение к БД клиента используя pool manager
+    let client_db = crate::api::helpers::get_client_db_connection(company_id, &app_state).await?;
 
     let channel_to_delete = wazzup_channel::Entity::find_by_id(channel_id.clone()).one(&client_db).await?;
 

@@ -3,6 +3,7 @@ use crate::database::client::models::{
     wazzup_channel,
     wazzup_chat,
     wazzup_message,
+    user,
     Entity as ClientEntity,
     Column as ClientColumn,
     ActiveModel as ClientActiveModel,
@@ -11,11 +12,84 @@ use crate::services::wazzup_api::{WazzupApiService, WazzupContact, WazzupContact
 use sea_orm::{Database, DatabaseConnection, EntityTrait, Set, NotSet, ActiveModelTrait, QueryFilter, ColumnTrait};
 use utoipa::ToSchema;
 use crate::errors::AppError;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use crate::config::Config;
 use chrono::Utc;
 
-#[derive(Debug, Deserialize, ToSchema)]
+/// Валидирует и нормализует email адрес
+fn validate_and_normalize_email(email: &str) -> Option<String> {
+    let trimmed = email.trim();
+    if trimmed.is_empty() || trimmed.len() > 254 {
+        return None;
+    }
+    
+    // Базовая проверка на валидность email
+    if !trimmed.contains('@') || trimmed.starts_with('@') || trimmed.ends_with('@') {
+        return None;
+    }
+    
+    Some(trimmed.to_lowercase())
+}
+
+/// Валидирует и нормализует имя
+fn validate_and_normalize_name(name: &str) -> Option<String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() || trimmed.len() > 255 {
+        return None;
+    }
+    
+    // Удаляем потенциально опасные символы
+    let cleaned: String = trimmed.chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace() || "-_.,()[]{}".contains(*c))
+        .collect();
+    
+    if cleaned.is_empty() {
+        return None;
+    }
+    
+    Some(cleaned)
+}
+
+/// Валидирует и нормализует номер телефона
+fn validate_and_normalize_phone(phone: &str) -> Option<String> {
+    let trimmed = phone.trim();
+    if trimmed.is_empty() || trimmed.len() > 20 {
+        return None;
+    }
+    
+    // Удаляем все кроме цифр, +, -, (, ), пробелов
+    let cleaned: String = trimmed.chars()
+        .filter(|c| c.is_ascii_digit() || "+()-. ".contains(*c))
+        .collect();
+    
+    if cleaned.is_empty() {
+        return None;
+    }
+    
+    Some(cleaned)
+}
+
+/// Валидирует ID (должен содержать только безопасные символы)
+fn validate_id(id: &str) -> bool {
+    if id.is_empty() || id.len() > 100 {
+        return false;
+    }
+    
+    // ID должен содержать только буквы, цифры, дефисы и подчеркивания
+    id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Находит первого пользователя с ролью "bot" в базе данных
+async fn find_bot_user(client_db: &DatabaseConnection) -> Result<Option<i64>, sea_orm::DbErr> {
+    let bot = user::Entity::find()
+        .filter(user::Column::Role.eq("bot"))
+        .one(client_db)
+        .await?;
+    
+    Ok(bot.map(|b| b.id))
+}
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WebhookMessage {
     pub message_id: String,
@@ -29,7 +103,7 @@ pub struct WebhookMessage {
     pub client_phone: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WebhookContact {
     pub contact_id: String,
@@ -40,7 +114,7 @@ pub struct WebhookContact {
     pub channel_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WebhookRequest {
     pub test: Option<bool>,
@@ -52,6 +126,12 @@ async fn get_client_db_conn(
     company: &main_models::Model,
     config: &Config,
 ) -> Result<DatabaseConnection, AppError> {
+    // Валидация имени базы данных
+    if !company.database_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        log::error!("Invalid database name: {}", company.database_name);
+        return Err(AppError::InvalidInput("Invalid database name format".to_string()));
+    }
+    
     let db_url = config.client_database_url_template.replace("{db_name}", &company.database_name);
     Ok(Database::connect(&db_url).await?)
 }
@@ -70,6 +150,21 @@ pub async fn handle_webhook(
     if company.is_active != Some(true) {
         log::warn!("Webhook for inactive company {}", company_id);
         return Ok(());
+    }
+
+    // Базовая защита от спама - ограничиваем количество контактов и сообщений
+    if let Some(ref contacts) = webhook.contacts {
+        if contacts.len() > 100 {
+            log::error!("Too many contacts in webhook: {} (max 100)", contacts.len());
+            return Err(AppError::InvalidInput("Too many contacts in single webhook request".to_string()));
+        }
+    }
+    
+    if let Some(ref messages) = webhook.messages {
+        if messages.len() > 100 {
+            log::error!("Too many messages in webhook: {} (max 100)", messages.len());
+            return Err(AppError::InvalidInput("Too many messages in single webhook request".to_string()));
+        }
     }
 
     log::info!("Processing webhook for company: {}", company.name);
@@ -123,13 +218,16 @@ pub async fn handle_webhook(
         return Ok(());
     }
 
+    // Создаем подключение к клиентской БД один раз для всех операций
+    // ПРИМЕЧАНИЕ: Здесь мы пока используем прямое подключение, но в будущем 
+    // можно передать AppState и использовать pool manager
+    let client_db = get_client_db_conn(&company, config).await?;
+
     if let Some(contacts) = webhook.contacts {
-        let client_db = get_client_db_conn(&company, config).await?;
         handle_contacts(company_id, contacts, &client_db).await?;
     }
 
     if let Some(messages) = webhook.messages {
-        let client_db = get_client_db_conn(&company, config).await?;
         handle_messages(company_id, messages, &client_db, &company).await?;
     }
 
@@ -148,6 +246,13 @@ async fn handle_contacts(
     
     for (index, contact) in contacts.iter().enumerate() {
         log::info!("=== PROCESSING CONTACT {} of {} ===", index + 1, contacts.len());
+        
+        // Валидация входных данных
+        if !validate_id(&contact.contact_id) {
+            log::error!("INVALID contact_id: '{}' - skipping", contact.contact_id);
+            continue;
+        }
+        
         log::info!("Processing contact {} for company {}", contact.contact_id, company_id);
         log::info!("Contact RAW data dump:");
         log::info!("  contact_id: '{}'", contact.contact_id);
@@ -231,56 +336,62 @@ async fn handle_contacts(
 
         log::info!("CLIENT NOT EXISTS: Creating new client for contact_id '{}'", contact.contact_id);
 
-        // Создаем нового клиента - подробный разбор полей
+        // Создаем нового клиента - подробный разбор полей с валидацией
         let full_name = if let Some(ref name) = contact.name {
-            if !name.trim().is_empty() {
-                log::info!("Using contact name as full_name: '{}'", name);
-                name.trim().to_string()
+            if let Some(validated_name) = validate_and_normalize_name(name) {
+                log::info!("Using validated contact name as full_name: '{}'", validated_name);
+                validated_name
             } else {
-                log::info!("Contact name is empty, falling back to phone or default");
-                contact.phone.as_ref()
-                    .filter(|p| !p.trim().is_empty())
-                    .map(|p| {
-                        log::info!("Using phone as full_name: '{}'", p);
-                        p.trim().to_string()
-                    })
-                    .unwrap_or_else(|| {
-                        log::info!("Using default 'Неизвестный контакт' as full_name");
+                log::info!("Contact name validation failed, falling back to phone or default");
+                if let Some(ref phone) = contact.phone {
+                    if let Some(validated_phone) = validate_and_normalize_phone(phone) {
+                        log::info!("Using validated phone as full_name: '{}'", validated_phone);
+                        validated_phone
+                    } else {
+                        log::info!("Phone validation failed, using default 'Неизвестный контакт' as full_name");
                         "Неизвестный контакт".to_string()
-                    })
+                    }
+                } else {
+                    log::info!("Using default 'Неизвестный контакт' as full_name");
+                    "Неизвестный контакт".to_string()
+                }
             }
         } else {
             log::info!("Contact name is None, falling back to phone or default");
-            contact.phone.as_ref()
-                .filter(|p| !p.trim().is_empty())
-                .map(|p| {
-                    log::info!("Using phone as full_name: '{}'", p);
-                    p.trim().to_string()
-                })
-                .unwrap_or_else(|| {
-                    log::info!("Using default 'Неизвестный контакт' as full_name");
+            if let Some(ref phone) = contact.phone {
+                if let Some(validated_phone) = validate_and_normalize_phone(phone) {
+                    log::info!("Using validated phone as full_name: '{}'", validated_phone);
+                    validated_phone
+                } else {
+                    log::info!("Phone validation failed, using default 'Неизвестный контакт' as full_name");
                     "Неизвестный контакт".to_string()
-                })
+                }
+            } else {
+                log::info!("Using default 'Неизвестный контакт' as full_name");
+                "Неизвестный контакт".to_string()
+            }
         };
         
         let email = if let Some(ref email) = contact.email {
-            if !email.trim().is_empty() {
-                log::info!("Using provided email: '{}'", email);
-                email.trim().to_string()
+            if let Some(validated_email) = validate_and_normalize_email(email) {
+                log::info!("Using validated email: '{}'", validated_email);
+                validated_email
             } else {
-                log::info!("Email is empty, generating one from contact_id");
-                format!("{}@generated.wazzup", contact.contact_id)
+                log::info!("Email validation failed, generating one from contact_id and timestamp");
+                let timestamp = chrono::Utc::now().timestamp_millis();
+                format!("{}+{}@generated.wazzup", contact.contact_id, timestamp)
             }
         } else {
-            log::info!("Email is None, generating one from contact_id");
-            format!("{}@generated.wazzup", contact.contact_id)
+            log::info!("Email is None, generating one from contact_id and timestamp");
+            let timestamp = chrono::Utc::now().timestamp_millis();
+            format!("{}+{}@generated.wazzup", contact.contact_id, timestamp)
         };
 
         let phone = contact.phone.as_ref()
-            .filter(|p| !p.trim().is_empty())
+            .and_then(|p| validate_and_normalize_phone(p))
             .map(|p| {
-                log::info!("Using phone: '{}'", p);
-                p.trim().to_string()
+                log::info!("Using validated phone: '{}'", p);
+                p
             });
         
         let wazzup_chat = contact.chat_id.as_ref()
@@ -296,12 +407,19 @@ async fn handle_contacts(
         log::info!("  phone: {:?}", phone);
         log::info!("  wazzup_chat: {:?}", wazzup_chat);
 
+        // Ищем бота для автоматического назначения
+        let bot_user_id = find_bot_user(client_db).await?;
+        if bot_user_id.is_none() {
+            log::warn!("No bot user found in database - creating client without responsible user");
+        }
+
         let new_client = ClientActiveModel {
-            id: Set(0), // auto-increment
+            id: NotSet, // Пусть база данных сама генерирует ID
             full_name: Set(full_name.clone()),
             email: Set(email.clone()),
             phone: Set(phone.clone()),
             wazzup_chat: Set(wazzup_chat.clone()),
+            responsible_user_id: Set(bot_user_id),
             created_at: Set(Utc::now()),
         };
 
@@ -339,6 +457,23 @@ async fn handle_messages(
     
     for (index, msg) in messages.iter().enumerate() {
         log::info!("=== PROCESSING MESSAGE {} of {} ===", index + 1, messages.len());
+        
+        // Валидация входных данных
+        if !validate_id(&msg.message_id) {
+            log::error!("INVALID message_id: '{}' - skipping", msg.message_id);
+            continue;
+        }
+        
+        if !validate_id(&msg.channel_id) {
+            log::error!("INVALID channel_id: '{}' - skipping", msg.channel_id);
+            continue;
+        }
+        
+        if !validate_id(&msg.chat_id) {
+            log::error!("INVALID chat_id: '{}' - skipping", msg.chat_id);
+            continue;
+        }
+        
         log::info!("Processing message {} of type '{}' for company {}", msg.message_id, msg.r#type, company_id);
         
         log::info!("Message RAW data dump:");
@@ -459,21 +594,34 @@ async fn handle_messages(
         log::info!("Creating or checking client from message data");
         create_client_from_message(&msg, client_db, &company).await?;
 
-        // Определяем содержимое сообщения в зависимости от типа
+        // Определяем содержимое сообщения в зависимости от типа с ограничением размера
         let content = match msg.r#type.as_str() {
             "missing_call" => {
                 // Для пропущенного звонка создаем специальное сообщение
-                let phone = msg.client_phone.clone().unwrap_or_else(|| msg.chat_id.clone());
-                let name = msg.client_name.clone().unwrap_or_else(|| "Неизвестный контакт".to_string());
+                let phone = msg.client_phone.as_ref()
+                    .and_then(|p| validate_and_normalize_phone(p))
+                    .unwrap_or_else(|| msg.chat_id.clone());
+                let name = msg.client_name.as_ref()
+                    .and_then(|n| validate_and_normalize_name(n))
+                    .unwrap_or_else(|| "Неизвестный контакт".to_string());
                 let content = format!("Пропущенный звонок от {} ({})", name, phone);
                 log::info!("MESSAGE TYPE missing_call: Generated content: '{}'", content);
                 content
             },
             _ => {
-                // Для обычных сообщений берем текст или URI контента
+                // Для обычных сообщений берем текст или URI контента с ограничением размера
                 let content = msg.content_uri.clone().or(msg.text.clone()).unwrap_or_default();
-                log::info!("MESSAGE TYPE '{}': Using content: '{}'", msg.r#type, content);
-                content
+                
+                // Ограничиваем размер контента (например, 10000 символов)
+                let limited_content = if content.len() > 10000 {
+                    log::warn!("Content too long ({}), truncating to 10000 chars", content.len());
+                    format!("{}...[truncated]", &content[..9985])
+                } else {
+                    content
+                };
+                
+                log::info!("MESSAGE TYPE '{}': Using content: '{}'", msg.r#type, limited_content);
+                limited_content
             }
         };
 
@@ -618,8 +766,9 @@ async fn create_client_from_message(
         }
     };
 
-    // Создаем email на основе chat_id
-    let email = format!("{}@generated.wazzup", msg.chat_id);
+    // Создаем уникальный email на основе chat_id и timestamp
+    let timestamp = chrono::Utc::now().timestamp_millis();
+    let email = format!("{}+{}@generated.wazzup", msg.chat_id, timestamp);
     log::info!("GENERATED email: '{}'", email);
 
     // Обрабатываем phone
@@ -643,12 +792,19 @@ async fn create_client_from_message(
     log::info!("  phone: {:?}", phone);
     log::info!("  wazzup_chat: {:?}", wazzup_chat);
 
+    // Ищем бота для автоматического назначения
+    let bot_user_id = find_bot_user(client_db).await?;
+    if bot_user_id.is_none() {
+        log::warn!("No bot user found in database - creating client without responsible user");
+    }
+
     let new_client = ClientActiveModel {
         id: NotSet, // Пусть база данных сама генерирует ID
         full_name: Set(full_name.clone()),
         email: Set(email.clone()),
         phone: Set(phone.clone()),
         wazzup_chat: Set(wazzup_chat.clone()),
+        responsible_user_id: Set(bot_user_id),
         created_at: Set(Utc::now()),
     };
 

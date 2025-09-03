@@ -35,24 +35,34 @@ impl WazzupApiService {
             request_builder = request_builder.json(body_data);
         }
 
-        let response = request_builder.send().await?;
+        let response = match request_builder.send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                log::error!("Failed to send request to {}: {}", url, e);
+                return Err(AppError::ReqwestError(e));
+            }
+        };
 
-        // ИСПРАВЛЕНИЕ: Сначала проверяем статус, потом обрабатываем тело.
+        // Проверяем статус и собираем детальную информацию об ошибке
         if !response.status().is_success() {
-            // Теперь мы можем безопасно потребить `response`, чтобы получить текст ошибки.
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error reading response body".to_string());
             log::error!("Wazzup API Error on path {}: {} - {}", path, status, error_text);
-            // Создаем ошибку вручную, так как response уже использован.
+            
             return Err(AppError::InvalidInput(format!(
-                "API request failed with status {}: {}",
-                status, error_text
+                "API request to {} failed with status {}: {}",
+                path, status, error_text
             )));
         }
 
-        // Если статус успешный, парсим JSON.
-        let result = response.json::<R>().await?;
-        Ok(result)
+        // Если статус успешный, парсим JSON с лучшей обработкой ошибок
+        match response.json::<R>().await {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                log::error!("Failed to parse JSON response from {}: {}", path, e);
+                Err(AppError::ReqwestError(e))
+            }
+        }
     }
 
     // Специальный метод для PATCH вебхуков, который возвращает строку
@@ -379,9 +389,14 @@ pub struct CreateWazzupContactsRequest {
 }
 
 // API-compatible aliases for the contacts API
+// Deprecated type aliases - retained for backward compatibility but will be removed
+#[allow(dead_code)]
 pub type Contact = WazzupContact;
+#[allow(dead_code)]
 pub type ContactListResponse = WazzupContactListResponse;
+#[allow(dead_code)]
 pub type CreateContactRequest = WazzupContact;
+#[allow(dead_code)]
 pub type UpdateContactRequest = WazzupContact;
 
 // Messages
@@ -390,6 +405,7 @@ pub type UpdateContactRequest = WazzupContact;
 pub struct SendMessageRequest {
     pub chat_id: Option<String>,
     pub channel_id: Option<String>,
+    pub sender_id: i64,
     pub text: Option<String>,
     pub content_type: Option<String>,
 }

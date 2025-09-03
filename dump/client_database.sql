@@ -191,11 +191,18 @@ CREATE TABLE "public"."locations" (
     CONSTRAINT "pk_table_20_id" PRIMARY KEY ("id")
 );
 
-CREATE TABLE "public"."responsibilites" (
-    "user_id" bigint NOT NULL,
-    "client_id" bigint NOT NULL,
-    CONSTRAINT "pk_table_19_id" PRIMARY KEY ("user_id", "client_id")
+CREATE TABLE "public"."wazzup_transfers" (
+    "id" BIGSERIAL,
+    "chat_id" varchar NOT NULL,
+    "from_user_id" bigint NOT NULL,
+    "to_user_id" bigint NOT NULL,
+    "message_id" varchar,
+    "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
+    CONSTRAINT "pk_wazzup_transfers_id" PRIMARY KEY ("id")
 );
+-- Indexes
+CREATE INDEX "wazzup_transfers_idx_chat_id" ON "public"."wazzup_transfers" ("chat_id");
+CREATE INDEX "wazzup_transfers_idx_created_at" ON "public"."wazzup_transfers" ("created_at");
 
 CREATE TABLE "public"."resource_roles" (
     "id" BIGSERIAL,
@@ -210,6 +217,7 @@ CREATE TABLE "public"."clients" (
     "email" varchar(255) NOT NULL UNIQUE,
     "phone" varchar(50),
     "wazzup_chat" varchar,
+    "responsible_user_id" bigint,
     "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_clients_id" PRIMARY KEY ("id")
 );
@@ -218,8 +226,11 @@ CREATE TABLE "public"."clients" (
 -- Schema: public
 ALTER TABLE "public"."client_tag_assignments" ADD CONSTRAINT "fk_client_tag_assignments_client_id_clients_id" FOREIGN KEY("client_id") REFERENCES "public"."clients"("id");
 ALTER TABLE "public"."client_tag_assignments" ADD CONSTRAINT "fk_client_tag_assignments_tag_id_client_tags_id" FOREIGN KEY("tag_id") REFERENCES "public"."client_tags"("id");
-ALTER TABLE "public"."responsibilites" ADD CONSTRAINT "fk_responsibilites_client_id_clients_id" FOREIGN KEY("client_id") REFERENCES "public"."clients"("id");
 ALTER TABLE "public"."clients" ADD CONSTRAINT "fk_clients_wazzup_chat_wazzup_chats_id" FOREIGN KEY("wazzup_chat") REFERENCES "public"."wazzup_chats"("id");
+ALTER TABLE "public"."clients" ADD CONSTRAINT "fk_clients_responsible_user_id_users_id" FOREIGN KEY("responsible_user_id") REFERENCES "public"."users"("id");
+ALTER TABLE "public"."wazzup_transfers" ADD CONSTRAINT "fk_wazzup_transfers_chat_id_wazzup_chats_id" FOREIGN KEY("chat_id") REFERENCES "public"."wazzup_chats"("id");
+ALTER TABLE "public"."wazzup_transfers" ADD CONSTRAINT "fk_wazzup_transfers_from_user_id_users_id" FOREIGN KEY("from_user_id") REFERENCES "public"."users"("id");
+ALTER TABLE "public"."wazzup_transfers" ADD CONSTRAINT "fk_wazzup_transfers_to_user_id_users_id" FOREIGN KEY("to_user_id") REFERENCES "public"."users"("id");
 ALTER TABLE "public"."availability_exceptions" ADD CONSTRAINT "fk_availability_exceptions_resource_id_resources_id" FOREIGN KEY("resource_id") REFERENCES "public"."resources"("id");
 ALTER TABLE "public"."booking_resources" ADD CONSTRAINT "fk_booking_resources_booking_id_bookings_id" FOREIGN KEY("booking_id") REFERENCES "public"."bookings"("id");
 ALTER TABLE "public"."booking_resources" ADD CONSTRAINT "fk_booking_resources_resource_id_resources_id" FOREIGN KEY("resource_id") REFERENCES "public"."resources"("id");
@@ -241,6 +252,5 @@ ALTER TABLE "public"."wazzup_messages" ADD CONSTRAINT "fk_wazzup_messages_chat_i
 ALTER TABLE "public"."wazzup_settings" ADD CONSTRAINT "fk_wazzup_settings_wazzup_channel_id_wazzup_channels_id" FOREIGN KEY("wazzup_channel_id") REFERENCES "public"."wazzup_channels"("id");
 ALTER TABLE "public"."users" ADD CONSTRAINT "fk_users_location_id_locations_id" FOREIGN KEY("location_id") REFERENCES "public"."locations"("id");
 ALTER TABLE "public"."locations" ADD CONSTRAINT "fk_locations_resource_id_resources_id" FOREIGN KEY("resource_id") REFERENCES "public"."resources"("id");
-ALTER TABLE "public"."responsibilites" ADD CONSTRAINT "fk_responsibilites_user_id_users_id" FOREIGN KEY("user_id") REFERENCES "public"."users"("id");
 ALTER TABLE "public"."tasks" ADD CONSTRAINT "fk_tasks_status_id_task_statuses_id" FOREIGN KEY("status_id") REFERENCES "public"."task_statuses"("id");
 ALTER TABLE "public"."users" ADD CONSTRAINT "fk_users_resource_id_resources_id" FOREIGN KEY("resource_id") REFERENCES "public"."resources"("id");

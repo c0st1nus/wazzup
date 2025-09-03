@@ -191,6 +191,7 @@ pub struct Model {
     pub email: String,
     pub phone: Option<String>,
     pub wazzup_chat: Option<String>,
+    pub responsible_user_id: Option<i64>,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeUtc,
 }
@@ -203,8 +204,12 @@ pub enum Relation {
         to = "wazzup_chat::Column::Id"
     )]
     WazzupChat,
-    #[sea_orm(has_many = "responsibility::Entity")]
-    Responsibility,
+    #[sea_orm(
+        belongs_to = "user::Entity",
+        from = "Column::ResponsibleUserId",
+        to = "user::Column::Id"
+    )]
+    ResponsibleUser,
 }
 
 impl Related<wazzup_chat::Entity> for Entity {
@@ -213,9 +218,9 @@ impl Related<wazzup_chat::Entity> for Entity {
     }
 }
 
-impl Related<responsibility::Entity> for Entity {
+impl Related<user::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Responsibility.def()
+        Relation::ResponsibleUser.def()
     }
 }
 
@@ -236,7 +241,7 @@ pub mod user {
         pub email: String,
         pub password_hash: String,
         pub salt: String,
-        pub role: String,
+        pub role: String, // bot; manager; admin; quality_controll
         pub resource_id: Option<i64>,
         pub location: Option<i64>,
         #[schema(value_type = String, format = DateTime)]
@@ -247,19 +252,11 @@ pub mod user {
     pub enum Relation {
         #[sea_orm(has_many = "super::token::Entity")]
         Token,
-        #[sea_orm(has_many = "super::responsibility::Entity")]
-        Responsibility,
     }
 
     impl Related<super::token::Entity> for Entity {
         fn to() -> RelationDef {
             Relation::Token.def()
-        }
-    }
-
-    impl Related<super::responsibility::Entity> for Entity {
-        fn to() -> RelationDef {
-            Relation::Responsibility.def()
         }
     }
 
@@ -453,45 +450,49 @@ pub mod wazzup_setting {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-// --- Responsibility ---
-pub mod responsibility {
+// --- Wazzup Transfers ---
+pub mod wazzup_transfer {
     use super::*;
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, DeriveEntityModel, ToSchema)]
-    #[sea_orm(table_name = "responsibilities")]
+    #[sea_orm(table_name = "wazzup_transfers")]
     pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub user_field: i64,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub client: i64,
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub chat_id: String,
+        pub from_user_id: i64,
+        pub to_user_id: i64,
+        pub message_id: Option<String>,
+        #[schema(value_type = String, format = DateTime)]
+        pub created_at: DateTimeUtc,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {
         #[sea_orm(
             belongs_to = "super::user::Entity",
-            from = "Column::UserField",
+            from = "Column::FromUserId",
             to = "super::user::Column::Id"
         )]
-        User,
+        FromUser,
         #[sea_orm(
-            belongs_to = "super::Entity",
-            from = "Column::Client",
-            to = "super::Column::Id"
+            belongs_to = "super::user::Entity", 
+            from = "Column::ToUserId",
+            to = "super::user::Column::Id"
         )]
-        Client,
+        ToUser,
+        #[sea_orm(
+            belongs_to = "super::wazzup_chat::Entity",
+            from = "Column::ChatId",
+            to = "super::wazzup_chat::Column::Id"
+        )]
+        WazzupChat,
     }
 
-    impl Related<super::user::Entity> for Entity {
+    impl Related<super::wazzup_chat::Entity> for Entity {
         fn to() -> RelationDef {
-            Relation::User.def()
+            Relation::WazzupChat.def()
         }
     }
 
-    impl Related<super::Entity> for Entity {
-        fn to() -> RelationDef {
-            Relation::Client.def()
-        }
-    }
-    
     impl ActiveModelBehavior for ActiveModel {}
 }

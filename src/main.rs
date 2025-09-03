@@ -13,13 +13,14 @@ mod errors;
 mod services;
 
 use crate::config::Config;
-use crate::api::{channels, chats, companies, messages, users, webhooks, contacts};
-use crate::database::{client::models as client_models, main::models as main_models};
+use crate::api::{admin, channels, chats, clients, companies, messages, users, webhooks, contacts};
+use crate::database::{client::models as client_models, main::models as main_models, pool_manager::ClientDbPoolManager};
 use crate::services::wazzup_api;
 
 pub struct AppState {
     db: DatabaseConnection,
     config: Config,
+    client_db_pool: ClientDbPoolManager,
 }
 
 #[actix_web::main]
@@ -32,6 +33,9 @@ async fn main() -> std::io::Result<()> {
     let db = Database::connect(&db_url)
         .await
         .expect("Failed to connect to database");
+
+    // Создаем pool manager для клиентских баз данных
+    let client_db_pool = ClientDbPoolManager::new(config.clone());
 
     #[derive(OpenApi)]
     #[openapi(
@@ -69,6 +73,8 @@ async fn main() -> std::io::Result<()> {
             webhooks::handle_webhook,
             webhooks::connect_webhooks,
             webhooks::test_webhook,
+            // Admin
+            admin::get_db_pool_stats,
         ),
         components(
             schemas(
@@ -86,8 +92,13 @@ async fn main() -> std::io::Result<()> {
                 channels::ChannelAddedNotification,
                 webhooks::ConnectWebhooksResponse,
                 
+                // --- Clients API Structs ---
+                clients::TransferClientRequest,
+                clients::TransferClientResponse,
+                
                 // --- Chats API Structs ---
                 chats::ChatResponse,
+                chats::ResponsibleUserInfo,
                 chats::MessageInfo,
                 chats::ChatListResponse,
                 chats::ChatDetailsResponse,
@@ -103,13 +114,18 @@ async fn main() -> std::io::Result<()> {
                 wazzup_api::UnreadCountResponse,
                 wazzup_api::UserSettings,
                 wazzup_api::UserRole,
-                wazzup_api::UpdateUserSettingsRequest
+                wazzup_api::UpdateUserSettingsRequest,
+                
+                // --- Admin Structs ---
+                admin::DatabasePoolStats
             )
         ),
         tags(
+            (name = "Admin", description = "Administrative endpoints"),
             (name = "Companies", description = "Company management endpoints"),
             (name = "Channels", description = "Channel management endpoints"),
             (name = "Chats", description = "Chat management endpoints (local data only)"),
+            (name = "Clients", description = "Client management endpoints"),
             (name = "Messages", description = "Message sending and retrieval endpoints"),
             (name = "Users", description = "User management endpoints"),
             (name = "Contacts", description = "Contact management endpoints (synced with Wazzup)"),
@@ -130,6 +146,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(AppState {
                 db: db.clone(),
                 config: config.clone(),
+                client_db_pool: client_db_pool.clone(),
             }))
             .service(
                 fs::Files::new("/static", "./static")
@@ -142,10 +159,12 @@ async fn main() -> std::io::Result<()> {
                     .configure(companies::init_routes)
                     .configure(channels::init_routes)
                     .configure(chats::init_routes)
+                    .configure(clients::init_routes)
                     .configure(messages::init_routes)
                     .configure(users::init_routes)
                     .configure(contacts::init_routes)
                     .configure(webhooks::init_routes)
+                    .configure(admin::init_routes)
             )
             .service(
                 web::redirect("/swagger", "/swagger/"))
