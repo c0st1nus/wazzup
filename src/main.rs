@@ -59,6 +59,11 @@ async fn main() -> std::io::Result<()> {
             messages::send_message,
             messages::get_messages,
             messages::get_unread_count,
+            messages::get_local_messages,
+            // Clients
+            clients::get_clients,
+            clients::get_client,
+            clients::transfer_client,
             // Users
             users::get_users,
             users::create_user,
@@ -95,6 +100,16 @@ async fn main() -> std::io::Result<()> {
                 // --- Clients API Structs ---
                 clients::TransferClientRequest,
                 clients::TransferClientResponse,
+                clients::ClientResponse,
+                clients::ClientListResponse,
+                clients::ClientQuery,
+                
+                // --- Messages API Structs ---
+                messages::MessageResponse,
+                messages::MessageListResponse,
+                
+                // --- Message Types ---
+                client_models::MessageType,
                 
                 // --- Chats API Structs ---
                 chats::ChatResponse,

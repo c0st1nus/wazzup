@@ -89,18 +89,13 @@ async fn get_last_message_for_chat(
 
 // --- Route Handlers ---
 
-#[derive(Deserialize, ToSchema)]
-struct ChatsQuery {
-    user_id: i64,
-}
-
 #[utoipa::path(
     get,
-    path = "/api/chats/{companyId}",
+    path = "/api/chats/{companyId}/{user_id}",
     tag = "Chats",
     params(
         ("companyId" = i64, Path, description = "Company ID"),
-        ("user_id" = i64, Query, description = "User ID for filtering chats by access rights")
+        ("user_id" = i64, Path, description = "User ID for filtering chats by access rights")
     ),
     responses(
         (status = 200, description = "List of chats with basic information", body = ChatListResponse),
@@ -108,14 +103,12 @@ struct ChatsQuery {
         (status = 403, description = "Access denied")
     )
 )]
-#[get("/{companyId}")]
+#[get("/{companyId}/{user_id}")]
 async fn get_chats(
     app_state: web::Data<AppState>,
-    path: web::Path<i64>,
-    query: web::Query<ChatsQuery>,
+    path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse, AppError> {
-    let company_id = path.into_inner();
-    let user_id = query.user_id;
+    let (company_id, user_id) = path.into_inner();
     
     // Get client database connection using pool manager
     let client_db = crate::api::helpers::get_client_db_connection(company_id, &app_state).await?;

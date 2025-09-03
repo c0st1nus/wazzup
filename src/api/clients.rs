@@ -1,12 +1,40 @@
-use actix_web::{post, web, HttpResponse};
-use sea_orm::{EntityTrait, ColumnTrait, QueryFilter, QueryOrder, Set, ActiveModelTrait, TransactionTrait};
+use actix_web::{get, post, web, HttpResponse};
+use sea_orm::{EntityTrait, ColumnTrait, QueryFilter, QueryOrder, Set, ActiveModelTrait, TransactionTrait, PaginatorTrait};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use crate::{
     errors::AppError,
     database::client::models::{Entity as Client, wazzup_transfer, user},
+    api::helpers,
     AppState,
 };
+
+// --- API Response Structures ---
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ClientResponse {
+    pub id: i64,
+    pub full_name: String,
+    pub email: String,
+    pub phone: Option<String>,
+    pub wazzup_chat: Option<String>,
+    pub responsible_user_id: Option<i64>,
+    pub responsible_user_name: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ClientListResponse {
+    pub clients: Vec<ClientResponse>,
+    pub total: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ClientQuery {
+    pub page: Option<u64>,
+    pub limit: Option<u64>,
+    pub search: Option<String>,
+}
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct TransferClientRequest {
@@ -20,6 +48,151 @@ pub struct TransferClientResponse {
     pub success: bool,
     pub message: String,
     pub transfer_id: Option<i64>,
+}
+
+// --- Route Handlers ---
+
+#[utoipa::path(
+    get,
+    path = "/api/clients/{companyId}",
+    tag = "Clients",
+    params(
+        ("companyId" = i64, Path, description = "Company ID"),
+        ("page" = Option<u64>, Query, description = "Page number (default: 1)"),
+        ("limit" = Option<u64>, Query, description = "Items per page (default: 20)"),
+        ("search" = Option<String>, Query, description = "Search by name, email or phone")
+    ),
+    responses(
+        (status = 200, description = "List of clients", body = ClientListResponse),
+        (status = 404, description = "Company not found")
+    )
+)]
+#[get("/{companyId}")]
+async fn get_clients(
+    app_state: web::Data<AppState>,
+    path: web::Path<i64>,
+    query: web::Query<ClientQuery>,
+) -> Result<HttpResponse, AppError> {
+    let company_id = path.into_inner();
+    let page = query.page.unwrap_or(1);
+    let limit = query.limit.unwrap_or(20);
+    let search = query.search.as_ref();
+    
+    // Получаем подключение к клиентской базе данных
+    let client_db = helpers::get_client_db_connection(company_id, &app_state).await?;
+    
+    // Создаем базовый запрос
+    let mut query_builder = Client::find();
+    
+    // Добавляем поиск если указан
+    if let Some(search_term) = search {
+        use sea_orm::{QueryFilter, Condition};
+        let mut search_condition = Condition::any()
+            .add(crate::database::client::models::Column::FullName.contains(search_term))
+            .add(crate::database::client::models::Column::Email.contains(search_term));
+        
+        // Если в поисковом запросе есть цифры, добавляем поиск по телефону
+        let phone_search: String = search_term.chars().filter(|c| c.is_numeric()).collect();
+        if !phone_search.is_empty() {
+            search_condition = search_condition.add(crate::database::client::models::Column::Phone.contains(&phone_search));
+        }
+        
+        query_builder = query_builder.filter(search_condition);
+    }
+    
+    // Получаем общее количество
+    let total = query_builder.clone().count(&client_db).await? as i64;
+    
+    // Применяем пагинацию и сортировку
+    let clients = query_builder
+        .order_by_desc(crate::database::client::models::Column::CreatedAt)
+        .paginate(&client_db, limit)
+        .fetch_page(page - 1)
+        .await?;
+    
+    // Преобразуем в ответ API с информацией об ответственных пользователях
+    let mut client_responses = Vec::new();
+    for client in clients {
+        let responsible_user_name = if let Some(user_id) = client.responsible_user_id {
+            user::Entity::find_by_id(user_id)
+                .one(&client_db)
+                .await?
+                .map(|u| u.name)
+        } else {
+            None
+        };
+        
+        client_responses.push(ClientResponse {
+            id: client.id,
+            full_name: client.full_name,
+            email: client.email,
+            phone: client.phone,
+            wazzup_chat: client.wazzup_chat,
+            responsible_user_id: client.responsible_user_id,
+            responsible_user_name,
+            created_at: client.created_at,
+        });
+    }
+    
+    let response = ClientListResponse {
+        clients: client_responses,
+        total,
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/clients/{companyId}/{clientId}",
+    tag = "Clients",
+    params(
+        ("companyId" = i64, Path, description = "Company ID"),
+        ("clientId" = i64, Path, description = "Client ID")
+    ),
+    responses(
+        (status = 200, description = "Client details", body = ClientResponse),
+        (status = 404, description = "Company or client not found")
+    )
+)]
+#[get("/{companyId}/{clientId}")]
+async fn get_client(
+    app_state: web::Data<AppState>,
+    path: web::Path<(i64, i64)>,
+) -> Result<HttpResponse, AppError> {
+    let (company_id, client_id) = path.into_inner();
+    
+    // Получаем подключение к клиентской базе данных
+    let client_db = helpers::get_client_db_connection(company_id, &app_state).await?;
+    
+    // Находим клиента
+    let client = Client::find_by_id(client_id)
+        .one(&client_db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Client not found".to_string()))?;
+    
+    // Получаем информацию об ответственном пользователе
+    let responsible_user_name = if let Some(user_id) = client.responsible_user_id {
+        user::Entity::find_by_id(user_id)
+            .one(&client_db)
+            .await?
+            .map(|u| u.name)
+    } else {
+        None
+    };
+    
+    let response = ClientResponse {
+        id: client.id,
+        full_name: client.full_name,
+        email: client.email,
+        phone: client.phone,
+        wazzup_chat: client.wazzup_chat,
+        responsible_user_id: client.responsible_user_id,
+        responsible_user_name,
+        created_at: client.created_at,
+    };
+
+    Ok(HttpResponse::Ok().json(response))
 }
 
 #[utoipa::path(
@@ -164,6 +337,8 @@ pub async fn transfer_responsibility(
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/clients")
+            .service(get_clients)
+            .service(get_client)
             .service(transfer_client)
     );
 }

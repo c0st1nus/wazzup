@@ -5,9 +5,29 @@ use crate::{
     api::clients::transfer_responsibility,
     errors::AppError,
     services::wazzup_api::{self, SendMessageRequest},
-    database::client::models::{Entity as Client, user},
+    database::client::models::{Entity as Client, user, MessageType},
     AppState,
 };
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+// --- API Response Structures ---
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct MessageResponse {
+    pub id: String,
+    #[schema(inline)]
+    pub message_type: MessageType,
+    pub content: String,
+    pub chat_id: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct MessageListResponse {
+    pub messages: Vec<MessageResponse>,
+    pub total: i64,
+}
 
 // --- Route Handlers ---
 
@@ -159,6 +179,64 @@ async fn get_unread_count(
     Ok(HttpResponse::Ok().json(response))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/messages/{companyId}/local/{chatId}",
+    tag = "Messages",
+    params(
+        ("companyId" = i64, Path, description = "Company ID"),
+        ("chatId" = String, Path, description = "Chat ID")
+    ),
+    responses(
+        (status = 200, description = "List of messages from local database", body = MessageListResponse),
+        (status = 404, description = "Company not found")
+    )
+)]
+#[get("/{companyId}/local/{chatId}")]
+async fn get_local_messages(
+    app_state: web::Data<AppState>,
+    path: web::Path<(i64, String)>,
+) -> Result<HttpResponse, AppError> {
+    use sea_orm::{PaginatorTrait, QueryOrder};
+    use crate::database::client::models::wazzup_message;
+    
+    let (company_id, chat_id) = path.into_inner();
+    
+    // Получаем подключение к клиентской базе данных
+    let client_db = helpers::get_client_db_connection(company_id, &app_state).await?;
+    
+    // Получаем сообщения из локальной базы данных
+    let messages = wazzup_message::Entity::find()
+        .filter(wazzup_message::Column::ChatId.eq(&chat_id))
+        .order_by_asc(wazzup_message::Column::CreatedAt)
+        .all(&client_db)
+        .await?;
+    
+    let total = wazzup_message::Entity::find()
+        .filter(wazzup_message::Column::ChatId.eq(&chat_id))
+        .count(&client_db)
+        .await? as i64;
+    
+    // Преобразуем в API ответ
+    let message_responses: Vec<MessageResponse> = messages
+        .into_iter()
+        .map(|msg| MessageResponse {
+            id: msg.id,
+            message_type: MessageType::from(msg.r#type),
+            content: msg.content,
+            chat_id: msg.chat_id,
+            created_at: msg.created_at,
+        })
+        .collect();
+    
+    let response = MessageListResponse {
+        messages: message_responses,
+        total,
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
 
 // Функция для регистрации всех маршрутов этого модуля
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
@@ -167,5 +245,6 @@ pub fn init_routes(cfg: &mut web::ServiceConfig) {
             .service(send_message)
             .service(get_messages)
             .service(get_unread_count)
+            .service(get_local_messages)
     );
 }
