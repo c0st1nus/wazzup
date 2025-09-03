@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy the binaries from the builder stage
-COPY --from=builder /app/target/release/wazzup-rust /usr/local/bin/wazzup-rust
+COPY --from=builder /app/target/release/main /usr/local/bin/main
 COPY --from=builder /app/target/release/admin-cli /usr/local/bin/admin-cli
 
 # Expose the port for the web server (assuming default Actix Web port)
