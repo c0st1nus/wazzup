@@ -1,5 +1,6 @@
 use actix_web::{web, App, HttpServer, middleware};
 use actix_files as fs;
+use actix_cors::Cors;
 use sea_orm::{Database, DatabaseConnection};
 use std::env;
 use utoipa::OpenApi;
@@ -157,6 +158,13 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(
+                Cors::default()
+                    .allow_any_origin()
+                    .allow_any_method()
+                    .allow_any_header()
+                    .max_age(3600)
+            )
             .wrap(middleware::Compress::default())
             .app_data(web::Data::new(AppState {
                 db: db.clone(),
