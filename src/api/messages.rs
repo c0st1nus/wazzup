@@ -11,6 +11,27 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+// Функция для определения типа сообщения из JSON контента
+fn determine_message_type_from_content(content: &serde_json::Value) -> MessageType {
+    if let Some(content_array) = content.as_array() {
+        // Определяем тип по первому элементу массива
+        if let Some(first_item) = content_array.first() {
+            if let Some(item_type) = first_item.get("type").and_then(|t| t.as_str()) {
+                return match item_type {
+                    "missing_call" => MessageType::MissedCall,
+                    "image" => MessageType::Image,
+                    "video" => MessageType::Video,
+                    "audio" => MessageType::Audio,
+                    "document" | "file" => MessageType::Docs,
+                    _ => MessageType::Text,
+                };
+            }
+        }
+    }
+    // По умолчанию считаем текстовым
+    MessageType::Text
+}
+
 // --- API Response Structures ---
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -231,8 +252,8 @@ async fn get_local_messages(
         .into_iter()
         .map(|msg| MessageResponse {
             id: msg.id,
-            message_type: MessageType::from(msg.r#type),
-            content: msg.content,
+            message_type: determine_message_type_from_content(&msg.content),
+            content: serde_json::to_string(&msg.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
             chat_id: msg.chat_id,
             client_id, // Добавляем client_id
             created_at: msg.created_at,

@@ -144,8 +144,7 @@ CREATE TABLE "public"."wazzup_channels" (
 
 CREATE TABLE "public"."wazzup_messages" (
     "id" varchar NOT NULL,
-    "type" varchar NOT NULL,
-    "content" text NOT NULL,
+    "content" jsonb NOT NULL DEFAULT '[]'::jsonb,
     "chat_id" varchar NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     "is_inbound" boolean NULL,
@@ -155,6 +154,12 @@ CREATE TABLE "public"."wazzup_messages" (
     "author_id" varchar(100) NULL,
     CONSTRAINT "pk_wazzup_messages_id" PRIMARY KEY ("id")
 );
+
+-- Index for better JSON query performance
+CREATE INDEX "idx_wazzup_messages_content_gin" ON "public"."wazzup_messages" USING GIN ("content");
+
+-- Comment on the JSON content column
+COMMENT ON COLUMN "public"."wazzup_messages"."content" IS 'JSON array of message content items with type and content fields';
 
 CREATE TABLE "public"."services" (
     "id" BIGSERIAL,

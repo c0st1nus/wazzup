@@ -13,8 +13,15 @@ use sea_orm::{Database, DatabaseConnection, EntityTrait, Set, NotSet, ActiveMode
 use utoipa::ToSchema;
 use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use crate::config::Config;
 use chrono::Utc;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MessageContentItem {
+    r#type: String,
+    content: String,
+}
 
 /// Валидирует и нормализует email адрес
 fn validate_and_normalize_email(email: &str) -> Option<String> {
@@ -548,53 +555,84 @@ async fn handle_messages(
             log::info!("  client_phone length: {}, is_empty: {}, trimmed: '{}'", client_phone.len(), client_phone.is_empty(), client_phone.trim());
         }
 
-        // Проверяем, существует ли уже такое сообщение в базе данных по ID и типу
-        log::info!("Checking if message '{}' with type '{}' already exists in database", msg.message_id, msg.r#type);
+        // Проверяем, существует ли уже такое сообщение в базе данных по ID
+        log::info!("Checking if message '{}' already exists in database", msg.message_id);
         if let Some(existing_message) = wazzup_message::Entity::find()
             .filter(wazzup_message::Column::Id.eq(&msg.message_id))
-            .filter(wazzup_message::Column::Type.eq(&msg.r#type))
             .one(client_db)
             .await? 
         {
-            log::info!("MESSAGE EXISTS BY ID+TYPE: Message '{}' with type '{}' already exists in database, skipping processing", msg.message_id, msg.r#type);
+            log::info!("MESSAGE EXISTS BY ID: Message '{}' already exists in database, skipping processing", msg.message_id);
             log::info!("Existing message details:");
             log::info!("  id: '{}'", existing_message.id);
-            log::info!("  type: '{}'", existing_message.r#type);
-            log::info!("  content: '{}'", existing_message.content);
+            log::info!("  content: '{}'", serde_json::to_string(&existing_message.content).unwrap_or_default());
             log::info!("  chat_id: '{}'", existing_message.chat_id);
             continue; // Пропускаем обработку этого сообщения
         }
 
-        log::info!("MESSAGE NOT EXISTS BY ID+TYPE: Message '{}' with type '{}' not found in database", msg.message_id, msg.r#type);
+        log::info!("MESSAGE NOT EXISTS BY ID: Message '{}' not found in database", msg.message_id);
 
         // Дополнительная проверка на дубликаты по содержимому
-        // Сначала получаем содержимое сообщения для проверки
+        // Генерируем содержимое для проверки в том же JSON формате
         let content_for_check = match msg.r#type.as_str() {
             "missing_call" => {
                 let phone = msg.client_phone.clone().unwrap_or_else(|| msg.chat_id.clone());
                 let name = msg.client_name.clone().unwrap_or_else(|| "Неизвестный контакт".to_string());
-                format!("Пропущенный звонок от {} ({})", name, phone)
+                let call_text = format!("Пропущенный звонок от {} ({})", name, phone);
+                
+                let content_items = vec![MessageContentItem {
+                    r#type: "missing_call".to_string(),
+                    content: call_text,
+                }];
+                
+                serde_json::to_value(&content_items).unwrap_or(serde_json::json!([]))
             },
             _ => {
-                msg.content_uri.clone().or(msg.text.clone()).unwrap_or_default()
+                // Генерируем тот же JSON для проверки дубликатов
+                let mut content_items = Vec::new();
+                
+                if let Some(text) = &msg.text {
+                    if !text.trim().is_empty() {
+                        content_items.push(MessageContentItem {
+                            r#type: "text".to_string(),
+                            content: text.trim().to_string(),
+                        });
+                    }
+                }
+                
+                if let Some(uri) = &msg.content_uri {
+                    if !uri.trim().is_empty() {
+                        content_items.push(MessageContentItem {
+                            r#type: msg.r#type.clone(),
+                            content: uri.trim().to_string(),
+                        });
+                    }
+                }
+                
+                if content_items.is_empty() {
+                    content_items.push(MessageContentItem {
+                        r#type: msg.r#type.clone(),
+                        content: format!("[{}]", msg.r#type),
+                    });
+                }
+                
+                serde_json::to_value(&content_items).unwrap_or(serde_json::json!([]))
             }
         };
 
-        // Проверяем наличие сообщения с таким же содержимым, типом и chat_id
-        log::info!("Checking for duplicate message by content in chat '{}' with type '{}' and content '{}'", 
-                   msg.chat_id, msg.r#type, content_for_check);
+        // Проверяем наличие сообщения с таким же содержимым и chat_id
+        log::info!("Checking for duplicate message by content in chat '{}'", msg.chat_id);
         
         let duplicate_messages = wazzup_message::Entity::find()
             .filter(wazzup_message::Column::ChatId.eq(&msg.chat_id))
-            .filter(wazzup_message::Column::Type.eq(&msg.r#type))
-            .filter(wazzup_message::Column::Content.eq(&content_for_check))
+            .filter(wazzup_message::Column::Content.eq(content_for_check.clone()))
             .all(client_db)
             .await?;
 
         if !duplicate_messages.is_empty() {
             log::warn!("DUPLICATE MESSAGE DETECTED: Found {} existing message(s) with same content", duplicate_messages.len());
             for (idx, dup_msg) in duplicate_messages.iter().enumerate() {
-                log::warn!("  Duplicate {}: id='{}', content='{}'", idx + 1, dup_msg.id, dup_msg.content);
+                log::warn!("  Duplicate {}: id='{}', content='{}'", idx + 1, dup_msg.id, serde_json::to_string(&dup_msg.content).unwrap_or_default());
             }
             log::warn!("SKIPPING: Message '{}' appears to be a duplicate based on content", msg.message_id);
             continue; // Пропускаем обработку этого сообщения
@@ -646,7 +684,7 @@ async fn handle_messages(
         log::info!("Creating or checking client from message data");
         create_client_from_message(&msg, client_db, &company).await?;
 
-        // Определяем содержимое сообщения в зависимости от типа с ограничением размера
+        // Определяем содержимое сообщения в зависимости от типа как JSON массив элементов
         let content = match msg.r#type.as_str() {
             "missing_call" => {
                 // Для пропущенного звонка создаем специальное сообщение
@@ -656,31 +694,68 @@ async fn handle_messages(
                 let name = msg.client_name.as_ref()
                     .and_then(|n| validate_and_normalize_name(n))
                     .unwrap_or_else(|| "Неизвестный контакт".to_string());
-                let content = format!("Пропущенный звонок от {} ({})", name, phone);
-                log::info!("MESSAGE TYPE missing_call: Generated content: '{}'", content);
-                content
+                let call_text = format!("Пропущенный звонок от {} ({})", name, phone);
+                
+                let content_items = vec![MessageContentItem {
+                    r#type: "missing_call".to_string(),
+                    content: call_text,
+                }];
+                
+                let json_value = serde_json::to_value(&content_items).unwrap_or(serde_json::json!([]));
+                log::info!("MESSAGE TYPE missing_call: Generated JSON content: '{}'", serde_json::to_string(&json_value).unwrap_or_default());
+                json_value
             },
             _ => {
-                // Для обычных сообщений берем текст или URI контента с ограничением размера
-                let content = msg.content_uri.clone().or(msg.text.clone()).unwrap_or_default();
+                // Для всех типов сообщений создаем массив элементов контента
+                let mut content_items = Vec::new();
                 
-                // Ограничиваем размер контента (например, 10000 символов)
-                let limited_content = if content.len() > 10000 {
-                    log::warn!("Content too long ({}), truncating to 10000 chars", content.len());
-                    format!("{}...[truncated]", &content[..9985])
-                } else {
-                    content
-                };
+                // Добавляем текст, если есть
+                if let Some(text) = &msg.text {
+                    if !text.trim().is_empty() {
+                        content_items.push(MessageContentItem {
+                            r#type: "text".to_string(),
+                            content: text.trim().to_string(),
+                        });
+                        log::info!("Added text element: '{}'", text.trim());
+                    }
+                }
                 
-                log::info!("MESSAGE TYPE '{}': Using content: '{}'", msg.r#type, limited_content);
-                limited_content
+                // Добавляем медиа-контент, если есть
+                if let Some(uri) = &msg.content_uri {
+                    if !uri.trim().is_empty() {
+                        content_items.push(MessageContentItem {
+                            r#type: msg.r#type.clone(), // image, video, audio, document, etc.
+                            content: uri.trim().to_string(),
+                        });
+                        log::info!("Added {} element: '{}'", msg.r#type, uri.trim());
+                    }
+                }
+                
+                // Если нет никакого контента, создаем пустой элемент с типом сообщения
+                if content_items.is_empty() {
+                    content_items.push(MessageContentItem {
+                        r#type: msg.r#type.clone(),
+                        content: format!("[{}]", msg.r#type),
+                    });
+                    log::info!("No content found, added placeholder for type: '{}'", msg.r#type);
+                }
+                
+                let json_value = serde_json::to_value(&content_items).unwrap_or(serde_json::json!([]));
+                
+                // Проверяем размер JSON (при необходимости можно ограничить)
+                let json_string = serde_json::to_string(&json_value).unwrap_or_default();
+                if json_string.len() > 10000 {
+                    log::warn!("JSON content too long ({}), but keeping full JSON structure", json_string.len());
+                }
+                
+                log::info!("MESSAGE TYPE '{}': Generated JSON content: '{}'", msg.r#type, json_string);
+                json_value
             }
         };
 
         log::info!("SAVING MESSAGE:");
         log::info!("  id: '{}'", msg.message_id);
-        log::info!("  type: '{}'", msg.r#type);
-        log::info!("  content: '{}'", content);
+        log::info!("  content (JSON): '{}'", serde_json::to_string(&content).unwrap_or_default());
         log::info!("  chat_id: '{}'", msg.chat_id);
 
         // Определяем направление сообщения для сохранения
@@ -689,7 +764,6 @@ async fn handle_messages(
         // Save message
         let new_message = wazzup_message::ActiveModel {
             id: Set(msg.message_id.clone()),
-            r#type: Set(msg.r#type.clone()),
             content: Set(content.clone()),
             chat_id: Set(msg.chat_id.clone()),
             created_at: Set(Utc::now()),
@@ -704,8 +778,7 @@ async fn handle_messages(
             Ok(message) => {
                 log::info!("SUCCESS: Saved message:");
                 log::info!("  id: '{}'", message.id);
-                log::info!("  type: '{}'", message.r#type);
-                log::info!("  content: '{}'", message.content);
+                log::info!("  content (JSON): '{}'", serde_json::to_string(&message.content).unwrap_or_default());
                 log::info!("  chat_id: '{}'", message.chat_id);
                 log::info!("  created_at: {}", message.created_at);
                 log::info!("  is_inbound: {:?}", message.is_inbound);

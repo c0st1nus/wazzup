@@ -1,13 +1,38 @@
-use actix_web::{get, web, HttpResponse};
+use actix_web::{get, post, web, HttpResponse};
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, QuerySelect, QueryOrder, PaginatorTrait};
 use crate::{
+    api::helpers,
+    api::clients::transfer_responsibility,
     database::client::models as client_models,
     errors::AppError,
+    services::wazzup_api::{self, SendMessageRequest},
     AppState,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+// Функция для определения типа сообщения из JSON контента
+fn determine_message_type_from_content(content: &serde_json::Value) -> String {
+    if let Some(content_array) = content.as_array() {
+        // Определяем тип по первому элементу массива
+        if let Some(first_item) = content_array.first() {
+            if let Some(item_type) = first_item.get("type").and_then(|t| t.as_str()) {
+                return item_type.to_string();
+            }
+        }
+    }
+    // По умолчанию считаем текстовым
+    "text".to_string()
+}
+
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct SendChatMessageRequest {
+    /// Текст сообщения (обязательно)
+    pub text: String,
+    /// URL файла (опционально) 
+    pub file_url: Option<String>,
+}
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ChatResponse {
@@ -97,8 +122,8 @@ async fn get_last_message_for_chat(
 
     Ok(message.map(|m| MessageInfo {
         id: m.id,
-        r#type: m.r#type,
-        content: m.content,
+        r#type: determine_message_type_from_content(&m.content),
+        content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
         client_id,
         created_at: m.created_at,
     }))
@@ -332,8 +357,8 @@ async fn get_chat_details(
         .into_iter()
         .map(|m| MessageInfo {
             id: m.id,
-            r#type: m.r#type,
-            content: m.content,
+            r#type: determine_message_type_from_content(&m.content),
+            content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
             client_id: Some(client.id),
             created_at: m.created_at,
         })
@@ -456,14 +481,114 @@ async fn get_chat_messages(
         .into_iter()
         .map(|m| MessageInfo {
             id: m.id,
-            r#type: m.r#type,
-            content: m.content,
+            r#type: determine_message_type_from_content(&m.content),
+            content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
             client_id: Some(client.id),
             created_at: m.created_at,
         })
         .collect();
 
     Ok(HttpResponse::Ok().json(message_infos))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/chats/{companyId}/{chatId}/{user_id}/send",
+    tag = "Chats",
+    params(
+        ("companyId" = i64, Path, description = "Company ID"),
+        ("chatId" = String, Path, description = "Chat ID"),
+        ("user_id" = i64, Path, description = "User ID of the sender")
+    ),
+    request_body = SendChatMessageRequest,
+    responses(
+        (status = 200, description = "Message sent successfully", body = wazzup_api::SendMessageResponse),
+        (status = 404, description = "Company, chat or user not found"),
+        (status = 403, description = "Access denied")
+    )
+)]
+#[post("/{companyId}/{chatId}/{user_id}/send")]
+async fn send_chat_message(
+    app_state: web::Data<AppState>,
+    path: web::Path<(i64, String, i64)>,
+    body: web::Json<SendChatMessageRequest>,
+) -> Result<HttpResponse, AppError> {
+    let (company_id, chat_id, user_id) = path.into_inner();
+    let request = body.into_inner();
+
+    // Get client database connection using pool manager
+    let client_db = crate::api::helpers::get_client_db_connection(company_id, &app_state).await?;
+
+    // Получаем информацию о пользователе
+    let user = client_models::user::Entity::find_by_id(user_id)
+        .one(&client_db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    // Находим клиента по chat_id
+    let client = client_models::Entity::find()
+        .filter(client_models::Column::WazzupChat.eq(&chat_id))
+        .filter(client_models::Column::ResponsibleUserId.is_not_null())
+        .one(&client_db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Client with chat {} not found or has no responsible user", chat_id)))?;
+
+    // Проверяем права доступа к чату (те же правила, что и для просмотра)
+    let has_access = match user.role.as_str() {
+        "admin" => true, // Админ может отправлять сообщения в любой чат
+        "quality_controll" => false, // Quality control не может отправлять сообщения
+        "manager" => {
+            // Менеджер может отправлять только если он ответственный за клиента
+            // или если ответственный - бот
+            if let Some(responsible_user_id) = client.responsible_user_id {
+                let responsible = client_models::user::Entity::find_by_id(responsible_user_id)
+                    .one(&client_db)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound("Responsible user not found".to_string()))?;
+                
+                match responsible.role.as_str() {
+                    "bot" => true, // Если ответственный - бот, то любой менеджер может писать
+                    _ => user.id == responsible_user_id, // Иначе только ответственный менеджер
+                }
+            } else {
+                true // Если нет ответственного, то менеджер может писать
+            }
+        },
+        _ => false,
+    };
+
+    if !has_access {
+        return Err(AppError::Forbidden("Access denied to send messages to this chat".to_string()));
+    }
+
+    // Выполняем перевод ответственности (если нужно)
+    transfer_responsibility(
+        &client_db,
+        &chat_id,
+        client.responsible_user_id,
+        user_id,
+        None, // message_id заполним позже если нужно
+    ).await?;
+
+    // Формируем запрос к Wazzup API
+    let send_request = SendMessageRequest {
+        chat_id: Some(chat_id.clone()),
+        channel_id: None,
+        sender_id: user_id,
+        text: Some(request.text),
+        content_type: if request.file_url.is_some() { 
+            Some("file".to_string()) 
+        } else { 
+            Some("text".to_string()) 
+        },
+    };
+
+    // Получаем API ключ и отправляем сообщение
+    let api_key = helpers::get_company_api_key(company_id, &app_state.db).await?;
+    let wazzup_api = wazzup_api::WazzupApiService::new();
+    let response = wazzup_api.send_message(&api_key, &send_request).await?;
+
+    Ok(HttpResponse::Ok().json(response))
 }
 
 // Функция для регистрации всех маршрутов этого модуля
@@ -473,5 +598,6 @@ pub fn init_routes(cfg: &mut web::ServiceConfig) {
             .service(get_chats)
             .service(get_chat_details)
             .service(get_chat_messages)
+            .service(send_chat_message)
     );
 }

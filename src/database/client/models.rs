@@ -437,12 +437,12 @@ pub mod wazzup_message {
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
-        pub r#type: String,
-        pub content: String,
+        #[sea_orm(column_type = "JsonBinary")]
+        pub content: serde_json::Value, // JSON массив элементов контента
         pub chat_id: String,
         #[schema(value_type = String, format = DateTime)]
         pub created_at: DateTimeUtc,
-        // Новые поля для определения направления сообщения
+        // Поля для определения направления сообщения (можно оставить для совместимости)
         pub is_inbound: Option<bool>, // true - входящее, false - исходящее
         pub is_echo: Option<bool>, // из API Wazzup
         pub direction_status: Option<String>, // "inbound", "outbound", etc.
