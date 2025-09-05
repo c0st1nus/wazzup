@@ -13,8 +13,8 @@ mod errors;
 mod services;
 
 use crate::config::Config;
-use crate::api::{channels, chats, companies, messages, users, webhooks, contacts};
-use crate::database::{client::models as client_models, main::models as main_models};
+use crate::api::{admin, channels, chats, companies, messages, users, webhooks, contacts};
+use crate::database::{client::models as client_models, main::models as main_models, pool_manager::ClientDbPoolManager};
 use crate::services::wazzup_api;
 
 pub struct AppState {
@@ -33,6 +33,9 @@ async fn main() -> std::io::Result<()> {
     let db = Database::connect(&db_url)
         .await
         .expect("Failed to connect to database");
+
+    // Создаем pool manager для клиентских баз данных
+    let client_db_pool = ClientDbPoolManager::new(config.clone());
 
     #[derive(OpenApi)]
     #[openapi(
@@ -70,6 +73,8 @@ async fn main() -> std::io::Result<()> {
             webhooks::handle_webhook,
             webhooks::connect_webhooks,
             webhooks::test_webhook,
+            // Admin
+            admin::get_db_pool_stats,
         ),
         components(
             schemas(
@@ -92,6 +97,11 @@ async fn main() -> std::io::Result<()> {
                 chats::MessageInfo,
                 chats::ChatListResponse,
                 chats::ChatDetailsResponse,
+                chats::ClientInfo,
+                chats::ResponsibleUserInfo,
+                
+                // --- Admin API Structs ---
+                admin::DatabasePoolStats,
                 
                 // --- Wazzup API Structs ---
                 wazzup_api::ChannelListResponse,
@@ -114,7 +124,8 @@ async fn main() -> std::io::Result<()> {
             (name = "Messages", description = "Message sending and retrieval endpoints"),
             (name = "Users", description = "User management endpoints"),
             (name = "Contacts", description = "Contact management endpoints (synced with Wazzup)"),
-            (name = "Webhooks", description = "Endpoints for receiving Wazzup webhooks")
+            (name = "Webhooks", description = "Endpoints for receiving Wazzup webhooks"),
+            (name = "Admin", description = "Administrative endpoints for system monitoring")
         )
     )]
     struct ApiDoc;
@@ -130,6 +141,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(AppState {
                 db: db.clone(),
                 config: config.clone(),
+                client_db_pool: client_db_pool.clone(),
             }))
             .service(
                 fs::Files::new("/static", "./static")
@@ -146,6 +158,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(users::init_routes)
                     .configure(contacts::init_routes)
                     .configure(webhooks::init_routes)
+                    .configure(admin::init_routes)
             )
             .service(
                 web::redirect("/swagger", "/swagger/"))
