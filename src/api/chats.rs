@@ -15,6 +15,7 @@ pub struct ChatResponse {
     pub channel_id: String,
     pub channel_type: Option<String>,
     pub chat_name: String,
+    pub client: Option<ClientInfo>, // Заменяем client_id на полную информацию о клиенте
     pub responsible_user: Option<ResponsibleUserInfo>,
     pub last_message: Option<MessageInfo>,
     pub last_message_date: Option<chrono::DateTime<chrono::Utc>>,
@@ -29,10 +30,23 @@ pub struct ResponsibleUserInfo {
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
+pub struct ClientInfo {
+    pub id: i64,
+    pub full_name: String,
+    pub email: String,
+    pub phone: Option<String>,
+    pub wazzup_chat: Option<String>,
+    pub responsible_user_id: Option<i64>,
+    #[schema(value_type = String, format = DateTime)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct MessageInfo {
     pub id: String,
     pub r#type: String,
     pub content: String,
+    pub client_id: Option<i64>, // Добавляем client_id
     #[schema(value_type = String, format = DateTime)]
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -48,6 +62,7 @@ pub struct ChatDetailsResponse {
     pub id: String,
     pub channel_id: String,
     pub channel_type: Option<String>,
+    pub client: Option<ClientInfo>, // Заменяем client_id на полную информацию о клиенте
     pub messages: Vec<MessageInfo>,
     pub messages_count: i64,
 }
@@ -71,6 +86,7 @@ async fn get_unread_count_for_chat(
 /// Получает последнее сообщение для чата
 async fn get_last_message_for_chat(
     chat_id: &str,
+    client_id: Option<i64>,
     db: &DatabaseConnection,
 ) -> Result<Option<MessageInfo>, AppError> {
     let message = client_models::wazzup_message::Entity::find()
@@ -83,6 +99,7 @@ async fn get_last_message_for_chat(
         id: m.id,
         r#type: m.r#type,
         content: m.content,
+        client_id,
         created_at: m.created_at,
     }))
 }
@@ -175,7 +192,7 @@ async fn get_chats(
                 .await?;
 
             if let Some((chat_data, channel)) = chat {
-                let last_message = get_last_message_for_chat(chat_id, &client_db).await?;
+                let last_message = get_last_message_for_chat(chat_id, Some(client.id), &client_db).await?;
                 let unread_count = get_unread_count_for_chat(chat_id, &client_db).await?;
 
                 // Получаем информацию об ответственном
@@ -199,7 +216,16 @@ async fn get_chats(
                     id: chat_data.id,
                     channel_id: chat_data.channel_id,
                     channel_type: channel.map(|c| c.r#type),
-                    chat_name: client.full_name, // Используем имя клиента как название чата
+                    chat_name: client.full_name.clone(), // Используем имя клиента как название чата
+                    client: Some(ClientInfo {
+                        id: client.id,
+                        full_name: client.full_name,
+                        email: client.email,
+                        phone: client.phone,
+                        wazzup_chat: client.wazzup_chat,
+                        responsible_user_id: client.responsible_user_id,
+                        created_at: client.created_at,
+                    }),
                     responsible_user,
                     last_message,
                     last_message_date,
@@ -308,6 +334,7 @@ async fn get_chat_details(
             id: m.id,
             r#type: m.r#type,
             content: m.content,
+            client_id: Some(client.id),
             created_at: m.created_at,
         })
         .collect();
@@ -320,6 +347,15 @@ async fn get_chat_details(
         id: chat.id,
         channel_id: chat.channel_id,
         channel_type: channel.map(|c| c.r#type),
+        client: Some(ClientInfo {
+            id: client.id,
+            full_name: client.full_name,
+            email: client.email,
+            phone: client.phone,
+            wazzup_chat: client.wazzup_chat,
+            responsible_user_id: client.responsible_user_id,
+            created_at: client.created_at,
+        }),
         messages: message_infos,
         messages_count,
     }))
@@ -422,6 +458,7 @@ async fn get_chat_messages(
             id: m.id,
             r#type: m.r#type,
             content: m.content,
+            client_id: Some(client.id),
             created_at: m.created_at,
         })
         .collect();

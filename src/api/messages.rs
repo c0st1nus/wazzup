@@ -20,6 +20,7 @@ pub struct MessageResponse {
     pub message_type: MessageType,
     pub content: String,
     pub chat_id: String,
+    pub client_id: Option<i64>, // Добавляем client_id
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -205,6 +206,14 @@ async fn get_local_messages(
     // Получаем подключение к клиентской базе данных
     let client_db = helpers::get_client_db_connection(company_id, &app_state).await?;
     
+    // Находим клиента для данного чата
+    let client = Client::find()
+        .filter(crate::database::client::models::Column::WazzupChat.eq(&chat_id))
+        .one(&client_db)
+        .await?;
+    
+    let client_id = client.map(|c| c.id);
+    
     // Получаем сообщения из локальной базы данных
     let messages = wazzup_message::Entity::find()
         .filter(wazzup_message::Column::ChatId.eq(&chat_id))
@@ -225,6 +234,7 @@ async fn get_local_messages(
             message_type: MessageType::from(msg.r#type),
             content: msg.content,
             chat_id: msg.chat_id,
+            client_id, // Добавляем client_id
             created_at: msg.created_at,
         })
         .collect();
