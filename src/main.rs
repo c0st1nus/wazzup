@@ -18,8 +18,9 @@ use crate::database::{client::models as client_models, main::models as main_mode
 use crate::services::wazzup_api;
 
 pub struct AppState {
-    db: DatabaseConnection,
-    config: Config,
+    pub db: DatabaseConnection,
+    pub config: Config,
+    pub client_db_pool: ClientDbPoolManager,
 }
 
 #[actix_web::main]

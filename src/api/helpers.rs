@@ -27,6 +27,7 @@ pub async fn get_company_api_key(
 }
 
 /// Получает подключение к базе данных клиента по ID компании.
+#[allow(dead_code)]
 pub async fn get_client_db_connection(
     company_id: i64,
     app_state: &web::Data<AppState>,
