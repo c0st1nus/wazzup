@@ -5,6 +5,7 @@ use std::env;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 use dotenvy::dotenv;
+use actix_cors::Cors;
 
 mod api;
 mod config;
@@ -143,6 +144,13 @@ async fn main() -> std::io::Result<()> {
                 config: config.clone(),
                 client_db_pool: client_db_pool.clone(),
             }))
+            .wrap(
+                Cors::default()
+                    .allow_any_origin()
+                    .allow_any_method()
+                    .allow_any_header()
+                    .max_age(3600)
+            )
             .service(
                 fs::Files::new("/static", "./static")
                     .show_files_listing()
