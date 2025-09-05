@@ -1,6 +1,5 @@
 use actix_web::{web, App, HttpServer, middleware};
 use actix_files as fs;
-use actix_cors::Cors;
 use sea_orm::{Database, DatabaseConnection};
 use std::env;
 use utoipa::OpenApi;
@@ -14,14 +13,13 @@ mod errors;
 mod services;
 
 use crate::config::Config;
-use crate::api::{admin, channels, chats, clients, companies, messages, users, webhooks, contacts};
-use crate::database::{client::models as client_models, main::models as main_models, pool_manager::ClientDbPoolManager};
+use crate::api::{channels, chats, companies, messages, users, webhooks, contacts};
+use crate::database::{client::models as client_models, main::models as main_models};
 use crate::services::wazzup_api;
 
 pub struct AppState {
     db: DatabaseConnection,
     config: Config,
-    client_db_pool: ClientDbPoolManager,
 }
 
 #[actix_web::main]
@@ -34,9 +32,6 @@ async fn main() -> std::io::Result<()> {
     let db = Database::connect(&db_url)
         .await
         .expect("Failed to connect to database");
-
-    // Создаем pool manager для клиентских баз данных
-    let client_db_pool = ClientDbPoolManager::new(config.clone());
 
     #[derive(OpenApi)]
     #[openapi(
@@ -60,11 +55,6 @@ async fn main() -> std::io::Result<()> {
             messages::send_message,
             messages::get_messages,
             messages::get_unread_count,
-            messages::get_local_messages,
-            // Clients
-            clients::get_clients,
-            clients::get_client,
-            clients::transfer_client,
             // Users
             users::get_users,
             users::create_user,
@@ -79,8 +69,6 @@ async fn main() -> std::io::Result<()> {
             webhooks::handle_webhook,
             webhooks::connect_webhooks,
             webhooks::test_webhook,
-            // Admin
-            admin::get_db_pool_stats,
         ),
         components(
             schemas(
@@ -98,23 +86,8 @@ async fn main() -> std::io::Result<()> {
                 channels::ChannelAddedNotification,
                 webhooks::ConnectWebhooksResponse,
                 
-                // --- Clients API Structs ---
-                clients::TransferClientRequest,
-                clients::TransferClientResponse,
-                clients::ClientResponse,
-                clients::ClientListResponse,
-                clients::ClientQuery,
-                
-                // --- Messages API Structs ---
-                messages::MessageResponse,
-                messages::MessageListResponse,
-                
-                // --- Message Types ---
-                client_models::MessageType,
-                
                 // --- Chats API Structs ---
                 chats::ChatResponse,
-                chats::ResponsibleUserInfo,
                 chats::MessageInfo,
                 chats::ChatListResponse,
                 chats::ChatDetailsResponse,
@@ -130,18 +103,13 @@ async fn main() -> std::io::Result<()> {
                 wazzup_api::UnreadCountResponse,
                 wazzup_api::UserSettings,
                 wazzup_api::UserRole,
-                wazzup_api::UpdateUserSettingsRequest,
-                
-                // --- Admin Structs ---
-                admin::DatabasePoolStats
+                wazzup_api::UpdateUserSettingsRequest
             )
         ),
         tags(
-            (name = "Admin", description = "Administrative endpoints"),
             (name = "Companies", description = "Company management endpoints"),
             (name = "Channels", description = "Channel management endpoints"),
             (name = "Chats", description = "Chat management endpoints (local data only)"),
-            (name = "Clients", description = "Client management endpoints"),
             (name = "Messages", description = "Message sending and retrieval endpoints"),
             (name = "Users", description = "User management endpoints"),
             (name = "Contacts", description = "Contact management endpoints (synced with Wazzup)"),
@@ -158,18 +126,9 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
-            .wrap(
-                Cors::default()
-                    .allow_any_origin()
-                    .allow_any_method()
-                    .allow_any_header()
-                    .max_age(3600)
-            )
-            .wrap(middleware::Compress::default())
             .app_data(web::Data::new(AppState {
                 db: db.clone(),
                 config: config.clone(),
-                client_db_pool: client_db_pool.clone(),
             }))
             .service(
                 fs::Files::new("/static", "./static")
@@ -182,12 +141,10 @@ async fn main() -> std::io::Result<()> {
                     .configure(companies::init_routes)
                     .configure(channels::init_routes)
                     .configure(chats::init_routes)
-                    .configure(clients::init_routes)
                     .configure(messages::init_routes)
                     .configure(users::init_routes)
                     .configure(contacts::init_routes)
                     .configure(webhooks::init_routes)
-                    .configure(admin::init_routes)
             )
             .service(
                 web::redirect("/swagger", "/swagger/"))
@@ -195,7 +152,6 @@ async fn main() -> std::io::Result<()> {
                     .url("/api-docs/openapi.json", ApiDoc::openapi()),
             )
     })
-    .workers(num_cpus::get())
     .bind((host, port))?
     .run()
     .await
