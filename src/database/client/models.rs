@@ -442,6 +442,12 @@ pub mod wazzup_message {
         pub chat_id: String,
         #[schema(value_type = String, format = DateTime)]
         pub created_at: DateTimeUtc,
+        // Новые поля для определения направления сообщения
+        pub is_inbound: Option<bool>, // true - входящее, false - исходящее
+        pub is_echo: Option<bool>, // из API Wazzup
+        pub direction_status: Option<String>, // "inbound", "outbound", etc.
+        pub author_name: Option<String>, // имя отправителя
+        pub author_id: Option<String>, // ID отправителя в CRM
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

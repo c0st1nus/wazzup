@@ -148,6 +148,11 @@ CREATE TABLE "public"."wazzup_messages" (
     "content" text NOT NULL,
     "chat_id" varchar NOT NULL,
     "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
+    "is_inbound" boolean NULL,
+    "is_echo" boolean NULL,
+    "direction_status" varchar(50) NULL,
+    "author_name" varchar(255) NULL,
+    "author_id" varchar(100) NULL,
     CONSTRAINT "pk_wazzup_messages_id" PRIMARY KEY ("id")
 );
 

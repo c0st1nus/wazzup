@@ -79,6 +79,22 @@ fn validate_id(id: &str) -> bool {
     id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
 }
 
+/// Определяет направление сообщения на основе полей isEcho и status
+/// Возвращает (is_inbound: bool, direction_description: String)
+pub fn determine_message_direction(msg: &WebhookMessage) -> (bool, String) {
+    match msg.is_echo {
+        Some(false) => (true, "ВХОДЯЩЕЕ (от клиента)".to_string()),
+        Some(true) => (false, "ИСХОДЯЩЕЕ (отправлено не из API)".to_string()),
+        None => {
+            // Если is_echo отсутствует, проверяем status
+            match msg.status.as_deref() {
+                Some("inbound") => (true, "ВХОДЯЩЕЕ (по статусу)".to_string()),
+                _ => (false, "НАПРАВЛЕНИЕ НЕ ОПРЕДЕЛЕНО".to_string())
+            }
+        }
+    }
+}
+
 /// Находит первого пользователя с ролью "bot" в базе данных
 async fn find_bot_user(client_db: &DatabaseConnection) -> Result<Option<i64>, sea_orm::DbErr> {
     let bot = user::Entity::find()
@@ -87,6 +103,15 @@ async fn find_bot_user(client_db: &DatabaseConnection) -> Result<Option<i64>, se
         .await?;
     
     Ok(bot.map(|b| b.id))
+}
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookContact {
+    pub name: Option<String>,
+    pub avatar_uri: Option<String>,
+    pub username: Option<String>, // Только для Telegram
+    pub phone: Option<String>, // Только для Telegram
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
@@ -101,11 +126,17 @@ pub struct WebhookMessage {
     pub content_uri: Option<String>,
     pub client_name: Option<String>,
     pub client_phone: Option<String>,
+    pub date_time: Option<String>, // Время отправки сообщения
+    pub is_echo: Option<bool>, // false - входящее, true - исходящее
+    pub status: Option<String>, // может содержать "inbound" для входящих
+    pub contact: Option<WebhookContact>, // информация о контакте
+    pub author_name: Option<String>, // имя пользователя отправившего сообщение
+    pub author_id: Option<String>, // ID пользователя CRM
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct WebhookContact {
+pub struct WebhookContactEvent {
     pub contact_id: String,
     pub name: Option<String>,
     pub phone: Option<String>,
@@ -119,7 +150,7 @@ pub struct WebhookContact {
 pub struct WebhookRequest {
     pub test: Option<bool>,
     pub messages: Option<Vec<WebhookMessage>>,
-    pub contacts: Option<Vec<WebhookContact>>,
+    pub contacts: Option<Vec<WebhookContactEvent>>,
 }
 
 async fn get_client_db_conn(
@@ -238,7 +269,7 @@ pub async fn handle_webhook(
 
 async fn handle_contacts(
     company_id: i64,
-    contacts: Vec<WebhookContact>,
+    contacts: Vec<WebhookContactEvent>,
     client_db: &DatabaseConnection,
 ) -> Result<(), AppError> {
     log::info!("=== HANDLING CONTACTS START ===");
@@ -486,6 +517,22 @@ async fn handle_messages(
         log::info!("  content_uri: {:?} (value: '{}')", msg.content_uri, msg.content_uri.as_deref().unwrap_or("NULL"));
         log::info!("  client_name: {:?} (value: '{}')", msg.client_name, msg.client_name.as_deref().unwrap_or("NULL"));
         log::info!("  client_phone: {:?} (value: '{}')", msg.client_phone, msg.client_phone.as_deref().unwrap_or("NULL"));
+        log::info!("  date_time: {:?} (value: '{}')", msg.date_time, msg.date_time.as_deref().unwrap_or("NULL"));
+        log::info!("  is_echo: {:?}", msg.is_echo);
+        log::info!("  status: {:?} (value: '{}')", msg.status, msg.status.as_deref().unwrap_or("NULL"));
+        log::info!("  author_name: {:?} (value: '{}')", msg.author_name, msg.author_name.as_deref().unwrap_or("NULL"));
+        log::info!("  author_id: {:?} (value: '{}')", msg.author_id, msg.author_id.as_deref().unwrap_or("NULL"));
+        
+        // Определяем направление сообщения
+        let (is_inbound, direction_description) = determine_message_direction(msg);
+        log::info!("  MESSAGE DIRECTION: {} (is_inbound: {})", direction_description, is_inbound);
+        
+        if let Some(ref contact) = msg.contact {
+            log::info!("  contact.name: {:?}", contact.name);
+            log::info!("  contact.avatar_uri: {:?}", contact.avatar_uri);
+            log::info!("  contact.username: {:?}", contact.username);
+            log::info!("  contact.phone: {:?}", contact.phone);
+        }
         
         // Дополнительная проверка на пустые строки
         if let Some(ref text) = msg.text {
@@ -501,10 +548,15 @@ async fn handle_messages(
             log::info!("  client_phone length: {}, is_empty: {}, trimmed: '{}'", client_phone.len(), client_phone.is_empty(), client_phone.trim());
         }
 
-        // Проверяем, существует ли уже такое сообщение в базе данных по ID
-        log::info!("Checking if message '{}' already exists in database", msg.message_id);
-        if let Some(existing_message) = wazzup_message::Entity::find_by_id(msg.message_id.clone()).one(client_db).await? {
-            log::info!("MESSAGE EXISTS BY ID: Message '{}' already exists in database, skipping processing", msg.message_id);
+        // Проверяем, существует ли уже такое сообщение в базе данных по ID и типу
+        log::info!("Checking if message '{}' with type '{}' already exists in database", msg.message_id, msg.r#type);
+        if let Some(existing_message) = wazzup_message::Entity::find()
+            .filter(wazzup_message::Column::Id.eq(&msg.message_id))
+            .filter(wazzup_message::Column::Type.eq(&msg.r#type))
+            .one(client_db)
+            .await? 
+        {
+            log::info!("MESSAGE EXISTS BY ID+TYPE: Message '{}' with type '{}' already exists in database, skipping processing", msg.message_id, msg.r#type);
             log::info!("Existing message details:");
             log::info!("  id: '{}'", existing_message.id);
             log::info!("  type: '{}'", existing_message.r#type);
@@ -513,7 +565,7 @@ async fn handle_messages(
             continue; // Пропускаем обработку этого сообщения
         }
 
-        log::info!("MESSAGE NOT EXISTS BY ID: Message '{}' not found in database by ID", msg.message_id);
+        log::info!("MESSAGE NOT EXISTS BY ID+TYPE: Message '{}' with type '{}' not found in database", msg.message_id, msg.r#type);
 
         // Дополнительная проверка на дубликаты по содержимому
         // Сначала получаем содержимое сообщения для проверки
@@ -631,6 +683,9 @@ async fn handle_messages(
         log::info!("  content: '{}'", content);
         log::info!("  chat_id: '{}'", msg.chat_id);
 
+        // Определяем направление сообщения для сохранения
+        let (is_inbound, _direction_description) = determine_message_direction(msg);
+
         // Save message
         let new_message = wazzup_message::ActiveModel {
             id: Set(msg.message_id.clone()),
@@ -638,6 +693,11 @@ async fn handle_messages(
             content: Set(content.clone()),
             chat_id: Set(msg.chat_id.clone()),
             created_at: Set(Utc::now()),
+            is_inbound: Set(Some(is_inbound)),
+            is_echo: Set(msg.is_echo),
+            direction_status: Set(msg.status.clone()),
+            author_name: Set(msg.author_name.clone()),
+            author_id: Set(msg.author_id.clone()),
         };
         
         match new_message.insert(client_db).await {
@@ -648,6 +708,11 @@ async fn handle_messages(
                 log::info!("  content: '{}'", message.content);
                 log::info!("  chat_id: '{}'", message.chat_id);
                 log::info!("  created_at: {}", message.created_at);
+                log::info!("  is_inbound: {:?}", message.is_inbound);
+                log::info!("  is_echo: {:?}", message.is_echo);
+                log::info!("  direction_status: {:?}", message.direction_status);
+                log::info!("  author_name: {:?}", message.author_name);
+                log::info!("  author_id: {:?}", message.author_id);
             },
             Err(e) => {
                 log::error!("FAILED to save message '{}': {}", msg.message_id, e);
