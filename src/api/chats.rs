@@ -595,17 +595,26 @@ async fn send_chat_message(
         None, // message_id заполним позже если нужно
     ).await?;
 
+    // Получаем информацию о чате и канале для определения chatType
+    let chat_info = client_models::wazzup_chat::Entity::find_by_id(&chat_id)
+        .find_also_related(client_models::wazzup_channel::Entity)
+        .one(&client_db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Chat not found".to_string()))?;
+    
+    let (chat_data, channel) = chat_info;
+    let channel_info = channel.ok_or_else(|| AppError::NotFound("Channel not found".to_string()))?;
+
     // Формируем запрос к Wazzup API
     let send_request = SendMessageRequest {
         chat_id: Some(chat_id.clone()),
-        channel_id: None,
+        channel_id: Some(chat_data.channel_id),
+        chat_type: Some(channel_info.r#type),
         sender_id: user_id,
         text: Some(request.text),
-        content_type: if request.file_url.is_some() { 
-            Some("file".to_string()) 
-        } else { 
-            Some("text".to_string()) 
-        },
+        content_uri: request.file_url, // Используем file_url для contentUri
+        crm_user_id: Some(user_id.to_string()),
+        crm_message_id: None,
     };
 
     // Получаем API ключ и отправляем сообщение

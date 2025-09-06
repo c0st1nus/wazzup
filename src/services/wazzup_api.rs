@@ -4,7 +4,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
-const WAZZUP_API_BASE_URL: &str = "https://tech.wazzup24.com";
+const WAZZUP_API_BASE_URL: &str = "https://api.wazzup24.com";
 
 #[derive(Clone)]
 pub struct WazzupApiService {
@@ -265,7 +265,7 @@ impl WazzupApiService {
         api_key: &str,
         request: &SendMessageRequest,
     ) -> Result<SendMessageResponse, AppError> {
-        self.request(api_key, Method::POST, "/messages", Some(request)).await
+        self.request(api_key, Method::POST, "/v3/message", Some(request)).await
     }
 
     pub async fn get_messages(&self, api_key: &str, chat_id: &str) -> Result<MessageListResponse, AppError> {
@@ -274,7 +274,8 @@ impl WazzupApiService {
     }
     
     pub async fn get_unread_count(&self, api_key: &str) -> Result<UnreadCountResponse, AppError> {
-        self.request(api_key, Method::GET, "/messages/unread-count", None::<&()>).await
+        // For now, use a placeholder endpoint - this needs to be updated to match actual Wazzup API
+        self.request(api_key, Method::GET, "/v3/unanswered/placeholder", None::<&()>).await
     }
 
     // --- Webhooks ---
@@ -411,16 +412,20 @@ pub type UpdateContactRequest = WazzupContact;
 pub struct SendMessageRequest {
     pub chat_id: Option<String>,
     pub channel_id: Option<String>,
+    pub chat_type: Option<String>,
     pub sender_id: i64,
     pub text: Option<String>,
-    pub content_type: Option<String>,
+    pub content_uri: Option<String>,
+    pub crm_user_id: Option<String>,
+    pub crm_message_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct SendMessageResponse {
     #[serde(rename = "messageId")]
     pub message_id: Option<String>,
-    pub status: Option<String>,
+    #[serde(rename = "chatId")]
+    pub chat_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -445,7 +450,7 @@ pub struct MessageListResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UnreadCountResponse {
-    pub unread_count: i32,
+    pub counter: i32,
 }
 
 

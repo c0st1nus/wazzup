@@ -146,10 +146,32 @@ async fn send_message(
         None, // message_id заполним позже если нужно
     ).await?;
     
+    // Получаем информацию о чате и канале для определения chatType
+    let chat_info = crate::database::client::models::wazzup_chat::Entity::find_by_id(chat_id)
+        .find_also_related(crate::database::client::models::wazzup_channel::Entity)
+        .one(&client_db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Chat not found".to_string()))?;
+    
+    let (chat, channel) = chat_info;
+    let channel_info = channel.ok_or_else(|| AppError::NotFound("Channel not found".to_string()))?;
+    
+    // Создаем новый запрос с правильными параметрами для Wazzup API
+    let wazzup_request = SendMessageRequest {
+        chat_id: Some(chat_id.clone()),
+        channel_id: Some(chat.channel_id),
+        chat_type: Some(channel_info.r#type),
+        sender_id: request.sender_id,
+        text: request.text.clone(),
+        content_uri: None, // TODO: добавить поддержку файлов позже
+        crm_user_id: Some(request.sender_id.to_string()),
+        crm_message_id: None, // TODO: добавить для идемпотентности
+    };
+    
     // Получаем API ключ и отправляем сообщение
     let api_key = helpers::get_company_api_key(company_id, &app_state.db).await?;
     let wazzup_api = wazzup_api::WazzupApiService::new();
-    let response = wazzup_api.send_message(&api_key, &request).await?;
+    let response = wazzup_api.send_message(&api_key, &wazzup_request).await?;
 
     Ok(HttpResponse::Ok().json(response))
 }
