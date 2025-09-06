@@ -94,7 +94,7 @@ async fn send_message(
     
     // Получаем информацию об отправителе
     let sender = user::Entity::find_by_id(request.sender_id)
-        .one(&app_state.db)
+        .one(&client_db)
         .await?
         .ok_or_else(|| AppError::NotFound("Sender not found".to_string()))?;
     
@@ -104,7 +104,7 @@ async fn send_message(
     } else if let Some(responsible_user_id) = client.responsible_user_id {
         // Получаем информацию об ответственном
         let responsible = user::Entity::find_by_id(responsible_user_id)
-            .one(&app_state.db)
+            .one(&client_db)
             .await?
             .ok_or_else(|| AppError::NotFound("Responsible user not found".to_string()))?;
         
