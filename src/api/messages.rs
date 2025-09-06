@@ -82,10 +82,13 @@ async fn send_message(
     let chat_id = request.chat_id.as_ref()
         .ok_or_else(|| AppError::InvalidInput("chat_id is required".to_string()))?;
     
+    // Получаем подключение к клиентской базе данных
+    let client_db = helpers::get_client_db_connection(company_id, &app_state).await?;
+    
     // Находим клиента по chat_id
     let client = Client::find()
         .filter(crate::database::client::models::Column::WazzupChat.eq(chat_id))
-        .one(&app_state.db)
+        .one(&client_db)
         .await?
         .ok_or_else(|| AppError::NotFound("Client with this chat not found".to_string()))?;
     
@@ -136,7 +139,7 @@ async fn send_message(
     
     // Выполняем перевод ответственности (если нужно)
     transfer_responsibility(
-        &app_state.db,
+        &client_db,
         chat_id,
         client.responsible_user_id,
         request.sender_id,
