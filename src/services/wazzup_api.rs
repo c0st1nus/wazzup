@@ -317,6 +317,7 @@ pub struct ChannelInfo {
     pub transport: Option<String>,
     pub visible: bool,
     pub tier: Option<String>,
+    pub is_inbound: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
@@ -432,6 +433,7 @@ pub struct Message {
      pub content_type: Option<String>,
      pub created_at: Option<chrono::DateTime<chrono::Utc>>,
      pub direction: Option<String>,
+     pub is_inbound: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

@@ -43,6 +43,7 @@ pub struct MessageResponse {
     pub chat_id: String,
     pub client_id: Option<i64>, // Добавляем client_id
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub is_inbound: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -257,6 +258,7 @@ async fn get_local_messages(
             chat_id: msg.chat_id,
             client_id, // Добавляем client_id
             created_at: msg.created_at,
+            is_inbound: msg.is_inbound,
         })
         .collect();
     

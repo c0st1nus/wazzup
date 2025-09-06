@@ -74,6 +74,7 @@ pub struct MessageInfo {
     pub client_id: Option<i64>, // Добавляем client_id
     #[schema(value_type = String, format = DateTime)]
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub is_inbound: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -126,6 +127,7 @@ async fn get_last_message_for_chat(
         content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
         client_id,
         created_at: m.created_at,
+        is_inbound: m.is_inbound,
     }))
 }
 
@@ -361,6 +363,7 @@ async fn get_chat_details(
             content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
             client_id: Some(client.id),
             created_at: m.created_at,
+            is_inbound: m.is_inbound,
         })
         .collect();
 
@@ -485,6 +488,7 @@ async fn get_chat_messages(
             content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
             client_id: Some(client.id),
             created_at: m.created_at,
+            is_inbound: m.is_inbound,
         })
         .collect();
 
