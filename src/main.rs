@@ -14,7 +14,7 @@ mod errors;
 mod services;
 
 use crate::config::Config;
-use crate::api::{admin, channels, chats, companies, messages, users, webhooks, contacts};
+use crate::api::{admin, channels, chats, companies, messages, timezone, users, webhooks, contacts, clients};
 use crate::database::{client::models as client_models, main::models as main_models, pool_manager::ClientDbPoolManager};
 use crate::services::wazzup_api;
 
@@ -65,6 +65,9 @@ async fn main() -> std::io::Result<()> {
             users::create_user,
             users::get_settings,
             users::update_settings,
+            // Timezone
+            timezone::get_current_timezone,
+            timezone::get_current_time,
             // Contacts
             contacts::get_contacts,
             contacts::get_contact_by_id,
@@ -104,6 +107,9 @@ async fn main() -> std::io::Result<()> {
                 // --- Admin API Structs ---
                 admin::DatabasePoolStats,
                 
+                // --- Timezone API Structs ---
+                timezone::TimezoneInfo,
+                
                 // --- Wazzup API Structs ---
                 wazzup_api::ChannelListResponse,
                 wazzup_api::ChannelInfo,
@@ -124,6 +130,7 @@ async fn main() -> std::io::Result<()> {
             (name = "Chats", description = "Chat management endpoints (local data only)"),
             (name = "Messages", description = "Message sending and retrieval endpoints"),
             (name = "Users", description = "User management endpoints"),
+            (name = "Timezone", description = "Timezone conversion and utility endpoints"),
             (name = "Contacts", description = "Contact management endpoints (synced with Wazzup)"),
             (name = "Webhooks", description = "Endpoints for receiving Wazzup webhooks"),
             (name = "Admin", description = "Administrative endpoints for system monitoring")
@@ -163,10 +170,12 @@ async fn main() -> std::io::Result<()> {
                     .configure(channels::init_routes)
                     .configure(chats::init_routes)
                     .configure(messages::init_routes)
+                    .configure(timezone::init_routes)
                     .configure(users::init_routes)
                     .configure(contacts::init_routes)
                     .configure(webhooks::init_routes)
                     .configure(admin::init_routes)
+                    .configure(clients::init_routes)
             )
             .service(
                 web::redirect("/swagger", "/swagger/"))

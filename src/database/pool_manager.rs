@@ -111,27 +111,3 @@ impl ClientDbPoolManager {
         pools.keys().cloned().collect()
     }
 }
-
-/// Упрощенная функция для получения подключения к клиентской БД
-/// Используется через helper функции в API модулях
-pub async fn get_client_db_from_pool_manager(
-    pool_manager: &ClientDbPoolManager,
-    company_id: i64,
-    main_db: &DatabaseConnection,
-) -> Result<DatabaseConnection, AppError> {
-    use sea_orm::EntityTrait;
-    use crate::database::main::models as main_models;
-
-    // Получаем информацию о компании
-    let company = main_models::Entity::find_by_id(company_id)
-        .one(main_db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Company with id {} not found", company_id)))?;
-
-    if company.is_active != Some(true) {
-        return Err(AppError::Forbidden("Company is not active".to_string()));
-    }
-
-    // Используем pool manager для получения подключения
-    pool_manager.get_connection(&company.database_name).await
-}

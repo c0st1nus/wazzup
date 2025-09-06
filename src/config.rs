@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use chrono_tz::Tz;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -6,6 +7,7 @@ pub struct Config {
     pub port: u16,
     pub client_database_url_template: String,
     pub public_url: Option<String>,
+    pub timezone: Option<String>,
 }
 
 impl Config {
@@ -14,12 +16,23 @@ impl Config {
             .add_source(config::Environment::default())
             .build()?;
         
-        let config: Config = cfg.try_deserialize()?;
+        let mut config: Config = cfg.try_deserialize()?;
+        
+        // Устанавливаем значение по умолчанию для timezone если не указано
+        if config.timezone.is_none() {
+            config.timezone = Some("UTC".to_string());
+        }
         
         // Валидация конфигурации
         config.validate()?;
         
         Ok(config)
+    }
+    
+    /// Получает временную зону из конфигурации
+    pub fn get_timezone(&self) -> Result<Tz, chrono_tz::ParseError> {
+        let tz_str = self.timezone.as_deref().unwrap_or("UTC");
+        tz_str.parse::<Tz>()
     }
     
     /// Валидирует конфигурацию на наличие потенциальных проблем безопасности
@@ -42,6 +55,13 @@ impl Config {
         // Проверяем, что URL не содержит очевидно небезопасных элементов path traversal
         if self.client_database_url_template.contains("..") {
             return Err(config::ConfigError::Message("Database URL template contains potentially unsafe path traversal".to_string()));
+        }
+        
+        // Валидируем временную зону
+        if let Some(tz_str) = &self.timezone {
+            if tz_str.parse::<Tz>().is_err() {
+                return Err(config::ConfigError::Message(format!("Invalid timezone: {}", tz_str)));
+            }
         }
         
         Ok(())

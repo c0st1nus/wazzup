@@ -74,6 +74,8 @@ pub struct MessageInfo {
     pub client_id: Option<i64>, // Добавляем client_id
     #[schema(value_type = String, format = DateTime)]
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Время в серверной временной зоне (для удобства клиента)
+    pub created_at_formatted: Option<String>,
     pub is_inbound: Option<bool>,
 }
 
@@ -114,6 +116,7 @@ async fn get_last_message_for_chat(
     chat_id: &str,
     client_id: Option<i64>,
     db: &DatabaseConnection,
+    app_state: &web::Data<AppState>,
 ) -> Result<Option<MessageInfo>, AppError> {
     let message = client_models::wazzup_message::Entity::find()
         .filter(client_models::wazzup_message::Column::ChatId.eq(chat_id))
@@ -121,13 +124,19 @@ async fn get_last_message_for_chat(
         .one(db)
         .await?;
 
-    Ok(message.map(|m| MessageInfo {
-        id: m.id,
-        r#type: determine_message_type_from_content(&m.content),
-        content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
-        client_id,
-        created_at: m.created_at,
-        is_inbound: m.is_inbound,
+    Ok(message.map(|m| {
+        let created_at_formatted = helpers::convert_to_server_timezone(m.created_at, app_state)
+            .ok(); // Игнорируем ошибки конвертации timezone
+            
+        MessageInfo {
+            id: m.id,
+            r#type: determine_message_type_from_content(&m.content),
+            content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
+            client_id,
+            created_at: m.created_at,
+            created_at_formatted,
+            is_inbound: m.is_inbound,
+        }
     }))
 }
 
@@ -219,7 +228,7 @@ async fn get_chats(
                 .await?;
 
             if let Some((chat_data, channel)) = chat {
-                let last_message = get_last_message_for_chat(chat_id, Some(client.id), &client_db).await?;
+                let last_message = get_last_message_for_chat(chat_id, Some(client.id), &client_db, &app_state).await?;
                 let unread_count = get_unread_count_for_chat(chat_id, &client_db).await?;
 
                 // Получаем информацию об ответственном
@@ -357,13 +366,19 @@ async fn get_chat_details(
 
     let message_infos: Vec<MessageInfo> = messages
         .into_iter()
-        .map(|m| MessageInfo {
-            id: m.id,
-            r#type: determine_message_type_from_content(&m.content),
-            content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
-            client_id: Some(client.id),
-            created_at: m.created_at,
-            is_inbound: m.is_inbound,
+        .map(|m| {
+            let created_at_formatted = helpers::convert_to_server_timezone(m.created_at, &app_state)
+                .ok(); // Игнорируем ошибки конвертации timezone
+                
+            MessageInfo {
+                id: m.id,
+                r#type: determine_message_type_from_content(&m.content),
+                content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
+                client_id: Some(client.id),
+                created_at: m.created_at,
+                created_at_formatted,
+                is_inbound: m.is_inbound,
+            }
         })
         .collect();
 
@@ -482,13 +497,19 @@ async fn get_chat_messages(
 
     let message_infos: Vec<MessageInfo> = messages
         .into_iter()
-        .map(|m| MessageInfo {
-            id: m.id,
-            r#type: determine_message_type_from_content(&m.content),
-            content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
-            client_id: Some(client.id),
-            created_at: m.created_at,
-            is_inbound: m.is_inbound,
+        .map(|m| {
+            let created_at_formatted = helpers::convert_to_server_timezone(m.created_at, &app_state)
+                .ok(); // Игнорируем ошибки конвертации timezone
+                
+            MessageInfo {
+                id: m.id,
+                r#type: determine_message_type_from_content(&m.content),
+                content: serde_json::to_string(&m.content).unwrap_or_else(|_| "[]".to_string()), // Конвертируем JSON в строку для API
+                client_id: Some(client.id),
+                created_at: m.created_at,
+                created_at_formatted,
+                is_inbound: m.is_inbound,
+            }
         })
         .collect();
 

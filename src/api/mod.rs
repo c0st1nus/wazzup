@@ -6,5 +6,6 @@ pub mod companies;
 pub mod contacts;
 pub mod helpers;
 pub mod messages;
+pub mod timezone;
 pub mod users;
 pub mod webhooks;
