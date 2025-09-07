@@ -15,7 +15,7 @@ mod services;
 
 use crate::config::Config;
 use crate::api::{admin, channels, chats, companies, messages, timezone, users, webhooks, contacts, clients};
-use crate::database::{client::models as client_models, main::models as main_models, pool_manager::ClientDbPoolManager};
+use crate::database::{client, main, pool_manager::ClientDbPoolManager};
 use crate::services::wazzup_api;
 
 pub struct AppState {
@@ -83,8 +83,8 @@ async fn main() -> std::io::Result<()> {
         components(
             schemas(
                 // --- Models ---
-                main_models::Model, // Company
-                client_models::user::Model, // User
+                main::companies::Model, // Company
+                client::users::Model, // User
 
                 // --- DTOs & API Structs ---
                 companies::CreateCompanyDto,

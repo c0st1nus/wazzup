@@ -4,7 +4,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::{
-    database::main::models as main_models,
+    database::main,
     errors::AppError,
     services::{
         wazzup_api::{self, WebhookSubscriptionRequest, WebhookSubscriptions},
@@ -53,7 +53,7 @@ async fn validate_webhook(
     log::info!("Webhook validation request for company {}", company_id);
     
     // Проверяем, что компания существует
-    let _company = main_models::Entity::find_by_id(company_id)
+    let _company = main::companies::Entity::find_by_id(company_id)
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
@@ -128,7 +128,7 @@ async fn connect_webhooks(
     let company_id = path.into_inner();
     log::info!("Connecting webhooks for company {}", company_id);
 
-    let company = main_models::Entity::find_by_id(company_id)
+    let company = main::companies::Entity::find_by_id(company_id)
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;

@@ -1,12 +1,10 @@
-use crate::database::main::models as main_models;
-use crate::database::client::models::{
-    wazzup_channel,
-    wazzup_chat,
-    wazzup_message,
-    user,
-    Entity as ClientEntity,
-    Column as ClientColumn,
-    ActiveModel as ClientActiveModel,
+use crate::database::main;
+use crate::database::client::{
+    wazzup_channels,
+    wazzup_chats,
+    wazzup_messages,
+    users,
+    clients::{Entity as ClientEntity, Column as ClientColumn, ActiveModel as ClientActiveModel},
 };
 use crate::services::wazzup_api::{WazzupApiService, WazzupContact, WazzupContactData};
 use sea_orm::{Database, DatabaseConnection, EntityTrait, Set, NotSet, ActiveModelTrait, QueryFilter, ColumnTrait};
@@ -104,8 +102,8 @@ pub fn determine_message_direction(msg: &WebhookMessage) -> (bool, String) {
 
 /// Находит первого пользователя с ролью "bot" в базе данных
 async fn find_bot_user(client_db: &DatabaseConnection) -> Result<Option<i64>, sea_orm::DbErr> {
-    let bot = user::Entity::find()
-        .filter(user::Column::Role.eq("bot"))
+    let bot = users::Entity::find()
+        .filter(users::Column::Role.eq("bot"))
         .one(client_db)
         .await?;
     
@@ -161,7 +159,7 @@ pub struct WebhookRequest {
 }
 
 async fn get_client_db_conn(
-    company: &main_models::Model,
+    company: &main::companies::Model,
     config: &Config,
 ) -> Result<DatabaseConnection, AppError> {
     // Валидация имени базы данных
@@ -180,7 +178,7 @@ pub async fn handle_webhook(
     main_db: &DatabaseConnection,
     config: &Config,
 ) -> Result<(), AppError> {
-    let company = main_models::Entity::find_by_id(company_id)
+    let company = main::companies::Entity::find_by_id(company_id)
         .one(main_db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company with id {} not found", company_id)))?;
@@ -458,7 +456,7 @@ async fn handle_contacts(
             phone: Set(phone.clone()),
             wazzup_chat: Set(wazzup_chat.clone()),
             responsible_user_id: Set(bot_user_id),
-            created_at: Set(Utc::now()),
+            created_at: Set(Utc::now().into()),
         };
 
         match new_client.insert(client_db).await {
@@ -488,7 +486,7 @@ async fn handle_messages(
     company_id: i64,
     messages: Vec<WebhookMessage>,
     client_db: &DatabaseConnection,
-    company: &main_models::Model,
+    company: &main::companies::Model,
 ) -> Result<(), AppError> {
     log::info!("=== HANDLING MESSAGES START ===");
     log::info!("Company ID: {}, Messages count: {}", company_id, messages.len());
@@ -557,8 +555,8 @@ async fn handle_messages(
 
         // Проверяем, существует ли уже такое сообщение в базе данных по ID
         log::info!("Checking if message '{}' already exists in database", msg.message_id);
-        if let Some(existing_message) = wazzup_message::Entity::find()
-            .filter(wazzup_message::Column::Id.eq(&msg.message_id))
+        if let Some(existing_message) = wazzup_messages::Entity::find()
+            .filter(wazzup_messages::Column::Id.eq(&msg.message_id))
             .one(client_db)
             .await? 
         {
@@ -623,9 +621,9 @@ async fn handle_messages(
         // Проверяем наличие сообщения с таким же содержимым и chat_id
         log::info!("Checking for duplicate message by content in chat '{}'", msg.chat_id);
         
-        let duplicate_messages = wazzup_message::Entity::find()
-            .filter(wazzup_message::Column::ChatId.eq(&msg.chat_id))
-            .filter(wazzup_message::Column::Content.eq(content_for_check.clone()))
+        let duplicate_messages = wazzup_messages::Entity::find()
+            .filter(wazzup_messages::Column::ChatId.eq(&msg.chat_id))
+            .filter(wazzup_messages::Column::Content.eq(content_for_check.clone()))
             .all(client_db)
             .await?;
 
@@ -642,9 +640,9 @@ async fn handle_messages(
 
         // Ensure channel exists
         log::info!("Checking if channel '{}' exists", msg.channel_id);
-        if wazzup_channel::Entity::find_by_id(msg.channel_id.clone()).one(client_db).await?.is_none() {
+        if wazzup_channels::Entity::find_by_id(msg.channel_id.clone()).one(client_db).await?.is_none() {
             log::info!("CHANNEL NOT EXISTS: Creating new channel with id '{}' and type '{}'", msg.channel_id, msg.chat_type);
-            let new_channel = wazzup_channel::ActiveModel {
+            let new_channel = wazzup_channels::ActiveModel {
                 id: Set(msg.channel_id.clone()),
                 r#type: Set(msg.chat_type.clone()),
             };
@@ -662,9 +660,9 @@ async fn handle_messages(
 
         // Ensure chat exists
         log::info!("Checking if chat '{}' exists", msg.chat_id);
-        if wazzup_chat::Entity::find_by_id(msg.chat_id.clone()).one(client_db).await?.is_none() {
+        if wazzup_chats::Entity::find_by_id(msg.chat_id.clone()).one(client_db).await?.is_none() {
             log::info!("CHAT NOT EXISTS: Creating new chat with id '{}' and channel_id '{}'", msg.chat_id, msg.channel_id);
-            let new_chat = wazzup_chat::ActiveModel {
+            let new_chat = wazzup_chats::ActiveModel {
                 id: Set(msg.chat_id.clone()),
                 channel_id: Set(msg.channel_id.clone()),
             };
@@ -762,11 +760,11 @@ async fn handle_messages(
         let (is_inbound, _direction_description) = determine_message_direction(msg);
 
         // Save message
-        let new_message = wazzup_message::ActiveModel {
+        let new_message = wazzup_messages::ActiveModel {
             id: Set(msg.message_id.clone()),
             content: Set(content.clone()),
             chat_id: Set(msg.chat_id.clone()),
-            created_at: Set(Utc::now()),
+            created_at: Set(Utc::now().into()),
             is_inbound: Set(Some(is_inbound)),
             is_echo: Set(msg.is_echo),
             direction_status: Set(msg.status.clone()),
@@ -803,7 +801,7 @@ async fn handle_messages(
 async fn create_client_from_message(
     msg: &WebhookMessage,
     client_db: &DatabaseConnection,
-    company: &main_models::Model,
+    company: &main::companies::Model,
 ) -> Result<(), AppError> {
     log::info!("=== CREATE CLIENT FROM MESSAGE START ===");
     log::info!("Checking if client exists for chat_id: '{}'", msg.chat_id);
@@ -943,7 +941,7 @@ async fn create_client_from_message(
         phone: Set(phone.clone()),
         wazzup_chat: Set(wazzup_chat.clone()),
         responsible_user_id: Set(bot_user_id),
-        created_at: Set(Utc::now()),
+        created_at: Set(Utc::now().into()),
     };
 
     match new_client.insert(client_db).await {
@@ -977,9 +975,9 @@ async fn create_client_from_message(
 }
 
 async fn create_wazzup_contact(
-    client: &crate::database::client::models::Model,
+    client: &crate::database::client::clients::Model,
     msg: &WebhookMessage,
-    company: &main_models::Model,
+    company: &main::companies::Model,
 ) {
     log::info!("=== CREATE WAZZUP CONTACT START ===");
     log::info!("Creating Wazzup contact for client {} with chat_id {}", client.id, msg.chat_id);

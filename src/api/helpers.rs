@@ -1,8 +1,9 @@
 use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::prelude::DateTimeWithTimeZone;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use crate::{
-    database::main::models as main_models,
+    database::main,
     errors::AppError,
     AppState,
 };
@@ -29,7 +30,7 @@ pub async fn get_company_api_key(
     company_id: i64,
     db: &DatabaseConnection,
 ) -> Result<String, AppError> {
-    let company = main_models::Entity::find_by_id(company_id)
+    let company = main::companies::Entity::find_by_id(company_id)
         .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company with id {} not found", company_id)))?;
@@ -50,7 +51,7 @@ pub async fn get_client_db_connection(
     company_id: i64,
     app_state: &web::Data<AppState>,
 ) -> Result<DatabaseConnection, AppError> {
-    let company = main_models::Entity::find_by_id(company_id)
+    let company = main::companies::Entity::find_by_id(company_id)
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
@@ -63,13 +64,16 @@ pub async fn get_client_db_connection(
     Ok(sea_orm::Database::connect(&client_db_url).await?)
 }
 
-/// Конвертирует UTC время в настроенную временную зону сервера
+/// Конвертирует время с временной зоной в настроенную временную зону сервера
 pub fn convert_to_server_timezone(
-    utc_time: DateTime<Utc>,
+    time_with_tz: DateTimeWithTimeZone,
     app_state: &web::Data<AppState>,
 ) -> Result<String, AppError> {
     let server_tz = app_state.config.get_timezone()
         .map_err(|e| AppError::InvalidInput(format!("Invalid server timezone: {}", e)))?;
+    
+    // Конвертируем DateTimeWithTimeZone в UTC DateTime
+    let utc_time = time_with_tz.naive_utc().and_utc();
     
     Ok(TimezoneUtils::format_time_with_timezone(utc_time, server_tz))
 }

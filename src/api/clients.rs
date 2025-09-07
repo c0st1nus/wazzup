@@ -1,10 +1,11 @@
 use actix_web::{get, post, web, HttpResponse};
 use sea_orm::{EntityTrait, ColumnTrait, QueryFilter, QueryOrder, Set, ActiveModelTrait, TransactionTrait, PaginatorTrait};
+use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use crate::{
     errors::AppError,
-    database::client::models::{Entity as Client, wazzup_transfer, user},
+    database::client::{clients::{Entity as Client}, wazzup_transfers, users},
     api::helpers,
     AppState,
 };
@@ -20,7 +21,8 @@ pub struct ClientResponse {
     pub wazzup_chat: Option<String>,
     pub responsible_user_id: Option<i64>,
     pub responsible_user_name: Option<String>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String, format = DateTime)]
+    pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -88,13 +90,13 @@ async fn get_clients(
     if let Some(search_term) = search {
         use sea_orm::{QueryFilter, Condition};
         let mut search_condition = Condition::any()
-            .add(crate::database::client::models::Column::FullName.contains(search_term))
-            .add(crate::database::client::models::Column::Email.contains(search_term));
+            .add(crate::database::client::clients::Column::FullName.contains(search_term))
+            .add(crate::database::client::clients::Column::Email.contains(search_term));
         
         // Если в поисковом запросе есть цифры, добавляем поиск по телефону
         let phone_search: String = search_term.chars().filter(|c| c.is_numeric()).collect();
         if !phone_search.is_empty() {
-            search_condition = search_condition.add(crate::database::client::models::Column::Phone.contains(&phone_search));
+            search_condition = search_condition.add(crate::database::client::clients::Column::Phone.contains(&phone_search));
         }
         
         query_builder = query_builder.filter(search_condition);
@@ -105,7 +107,7 @@ async fn get_clients(
     
     // Применяем пагинацию и сортировку
     let clients = query_builder
-        .order_by_desc(crate::database::client::models::Column::CreatedAt)
+        .order_by_desc(crate::database::client::clients::Column::CreatedAt)
         .paginate(&client_db, limit)
         .fetch_page(page - 1)
         .await?;
@@ -114,7 +116,7 @@ async fn get_clients(
     let mut client_responses = Vec::new();
     for client in clients {
         let responsible_user_name = if let Some(user_id) = client.responsible_user_id {
-            user::Entity::find_by_id(user_id)
+            users::Entity::find_by_id(user_id)
                 .one(&client_db)
                 .await?
                 .map(|u| u.name)
@@ -130,7 +132,7 @@ async fn get_clients(
             wazzup_chat: client.wazzup_chat,
             responsible_user_id: client.responsible_user_id,
             responsible_user_name,
-            created_at: client.created_at,
+            created_at: client.created_at.into(),
         });
     }
     
@@ -173,7 +175,7 @@ async fn get_client(
     
     // Получаем информацию об ответственном пользователе
     let responsible_user_name = if let Some(user_id) = client.responsible_user_id {
-        user::Entity::find_by_id(user_id)
+        users::Entity::find_by_id(user_id)
             .one(&client_db)
             .await?
             .map(|u| u.name)
@@ -214,7 +216,7 @@ async fn transfer_client(
     let request = body.into_inner();
     
     // Проверяем, что целевой пользователь не quality_controll
-    let target_user = user::Entity::find_by_id(request.to_user_id)
+    let target_user = users::Entity::find_by_id(request.to_user_id)
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("Target user not found".to_string()))?;
@@ -225,13 +227,13 @@ async fn transfer_client(
     
     // Находим клиента по chat_id
     let client = Client::find()
-        .filter(crate::database::client::models::Column::WazzupChat.eq(&request.chat_id))
+        .filter(crate::database::client::clients::Column::WazzupChat.eq(&request.chat_id))
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("Client with this chat not found".to_string()))?;
     
     // Получаем информацию о том, кто делает перевод
-    let from_user = user::Entity::find_by_id(request.from_user_id)
+    let from_user = users::Entity::find_by_id(request.from_user_id)
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("From user not found".to_string()))?;
@@ -286,7 +288,7 @@ pub async fn transfer_responsibility(
     
     // Находим клиента по chat_id
     let client = Client::find()
-        .filter(crate::database::client::models::Column::WazzupChat.eq(chat_id))
+        .filter(crate::database::client::clients::Column::WazzupChat.eq(chat_id))
         .one(&txn)
         .await?
         .ok_or_else(|| AppError::NotFound("Client with this chat not found".to_string()))?;
@@ -294,9 +296,9 @@ pub async fn transfer_responsibility(
     // Проверяем, нужно ли создавать запись в transfers
     let need_transfer_record = if let Some(current_responsible_id) = old_responsible_id {
         // Проверяем последний transfer для этого чата
-        let last_transfer = wazzup_transfer::Entity::find()
-            .filter(wazzup_transfer::Column::ChatId.eq(chat_id))
-            .order_by_desc(wazzup_transfer::Column::CreatedAt)
+        let last_transfer = wazzup_transfers::Entity::find()
+            .filter(wazzup_transfers::Column::ChatId.eq(chat_id))
+            .order_by_desc(wazzup_transfers::Column::CreatedAt)
             .one(&txn)
             .await?;
         
@@ -309,7 +311,7 @@ pub async fn transfer_responsibility(
     };
     
     // Обновляем ответственного в клиенте
-    let mut client_active: crate::database::client::models::ActiveModel = client.into();
+    let mut client_active: crate::database::client::clients::ActiveModel = client.into();
     client_active.responsible_user_id = Set(Some(new_responsible_id));
     client_active.update(&txn).await?;
     
@@ -317,13 +319,13 @@ pub async fn transfer_responsibility(
     
     // Создаем запись в wazzup_transfers если нужно
     if need_transfer_record {
-        let transfer = wazzup_transfer::ActiveModel {
+        let transfer = wazzup_transfers::ActiveModel {
             id: sea_orm::NotSet,
             chat_id: Set(chat_id.to_string()),
             from_user_id: Set(old_responsible_id.unwrap_or(0)), // 0 если не было ответственного
             to_user_id: Set(new_responsible_id),
             message_id: Set(message_id),
-            created_at: Set(chrono::Utc::now()),
+            created_at: Set(chrono::Utc::now().into()),
         };
         let inserted_transfer = transfer.insert(&txn).await?;
         transfer_id = inserted_transfer.id;

@@ -9,8 +9,8 @@ use url::form_urlencoded;
 
 use crate::{
     database::{
-        client::models::{wazzup_channel, wazzup_chat, wazzup_message, wazzup_setting},
-        main::models as main_models,
+        client::{wazzup_channels, wazzup_chats, wazzup_messages, wazzup_settings},
+        main,
     },
     errors::AppError,
     services::wazzup_api::{self, ChannelListResponse, GenerateIframeLinkRequest},
@@ -49,7 +49,7 @@ async fn get_company_api_key(
     company_id: i64,
     db: &DatabaseConnection,
 ) -> Result<String, AppError> {
-    let company = main_models::Entity::find_by_id(company_id)
+    let company = main::companies::Entity::find_by_id(company_id)
         .one(db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company with id {} not found", company_id)))?;
@@ -76,12 +76,12 @@ async fn sync_channels_to_db(
     if let Some(channels) = &channel_response.channels {
         for channel_info in channels {
             if let Some(guid) = &channel_info.guid {
-                let existing_channel = wazzup_channel::Entity::find_by_id(guid.clone())
+                let existing_channel = wazzup_channels::Entity::find_by_id(guid.clone())
                     .one(&client_db)
                     .await?;
 
                 if existing_channel.is_none() {
-                    let new_channel = wazzup_channel::ActiveModel {
+                    let new_channel = wazzup_channels::ActiveModel {
                         id: Set(guid.clone()),
                         r#type: Set(channel_info.transport.clone().unwrap_or_else(|| "unknown".to_string())),
                     };
@@ -164,17 +164,17 @@ async fn delete_channel(
     // Получаем подключение к БД клиента используя pool manager
     let client_db = crate::api::helpers::get_client_db_connection(company_id, &app_state).await?;
 
-    let channel_to_delete = wazzup_channel::Entity::find_by_id(channel_id.clone()).one(&client_db).await?;
+    let channel_to_delete = wazzup_channels::Entity::find_by_id(channel_id.clone()).one(&client_db).await?;
 
     if let Some(channel) = channel_to_delete {
         if query.delete_chats {
-            let chats = wazzup_chat::Entity::find().filter(wazzup_chat::Column::ChannelId.eq(channel_id.clone())).all(&client_db).await?;
+            let chats = wazzup_chats::Entity::find().filter(wazzup_chats::Column::ChannelId.eq(channel_id.clone())).all(&client_db).await?;
             for chat in chats {
-                wazzup_message::Entity::delete_many().filter(wazzup_message::Column::ChatId.eq(chat.id.clone())).exec(&client_db).await?;
+                wazzup_messages::Entity::delete_many().filter(wazzup_messages::Column::ChatId.eq(chat.id.clone())).exec(&client_db).await?;
                 chat.into_active_model().delete(&client_db).await?;
             }
         }
-        wazzup_setting::Entity::delete_many().filter(wazzup_setting::Column::WazzupChannelId.eq(channel_id.clone())).exec(&client_db).await?;
+        wazzup_settings::Entity::delete_many().filter(wazzup_settings::Column::WazzupChannelId.eq(channel_id.clone())).exec(&client_db).await?;
         channel.into_active_model().delete(&client_db).await?;
     }
     

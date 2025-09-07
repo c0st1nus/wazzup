@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use crate::{
     database::{
-        client::models::{self as client_models},
+        client,
     },
     errors::AppError,
     services::wazzup_api::{self, UpdateUserSettingsRequest},
@@ -57,7 +57,7 @@ async fn get_company_api_key(
         ("companyId" = i64, Path, description = "Company ID")
     ),
     responses(
-        (status = 200, description = "List of users for the company", body = [client_models::user::Model]),
+        (status = 200, description = "List of users for the company", body = [client::users::Model]),
         (status = 404, description = "Company not found")
     )
 )]
@@ -68,7 +68,7 @@ async fn get_users(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let client_db = get_client_db_conn(company_id, &app_state).await?;
-    let users = client_models::user::Entity::find().all(&client_db).await?;
+    let users = client::users::Entity::find().all(&client_db).await?;
     Ok(HttpResponse::Ok().json(users))
 }
 
@@ -82,7 +82,7 @@ async fn get_users(
     ),
     request_body = CreateUserDto,
     responses(
-        (status = 201, description = "User created successfully", body = client_models::user::Model),
+        (status = 201, description = "User created successfully", body = client::users::Model),
         (status = 404, description = "Company not found"),
         (status = 400, description = "Invalid input, e.g., user already exists")
     )
@@ -97,8 +97,8 @@ async fn create_user(
     let client_db = get_client_db_conn(company_id, &app_state).await?;
 
     // Проверка на существующего пользователя (опционально, но рекомендуется)
-    let existing_user = client_models::user::Entity::find()
-        .filter(client_models::user::Column::Email.eq(body.email.clone()))
+    let existing_user = client::users::Entity::find()
+        .filter(client::users::Column::Email.eq(body.email.clone()))
         .one(&client_db)
         .await?;
 
@@ -106,14 +106,14 @@ async fn create_user(
         return Err(AppError::InvalidInput(format!("User with email {} already exists", body.email)));
     }
 
-    let new_user = client_models::user::ActiveModel {
+    let new_user = client::users::ActiveModel {
         name: Set(body.name.clone()),
         login: Set(body.login.clone()),
         email: Set(body.email.clone()),
         password_hash: Set(body.password_hash.clone()), // В проде здесь должно быть хеширование
         salt: Set(body.salt.clone()),
         role: Set(body.role.clone().unwrap_or_else(|| "manager".to_string())),
-        created_at: Set(chrono::Utc::now()),
+        created_at: Set(chrono::Utc::now().into()),
         ..Default::default()
     };
 

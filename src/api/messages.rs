@@ -1,11 +1,12 @@
 use actix_web::{get, post, web, HttpResponse};
-use sea_orm::{EntityTrait, ColumnTrait, QueryFilter};
+use sea_orm::{EntityTrait, ColumnTrait, QueryFilter, QueryOrder, QuerySelect, PaginatorTrait};
+use sea_orm::prelude::DateTimeWithTimeZone;
 use crate::{
     api::helpers,
     api::clients::transfer_responsibility,
     errors::AppError,
     services::wazzup_api::{self, SendMessageRequest},
-    database::client::models::{Entity as Client, user, MessageType},
+    database::{client::{clients::{Entity as Client}, users}, types::MessageType},
     AppState,
 };
 use serde::{Deserialize, Serialize};
@@ -42,7 +43,8 @@ pub struct MessageResponse {
     pub content: String,
     pub chat_id: String,
     pub client_id: Option<i64>, // Добавляем client_id
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String, format = DateTime)]
+    pub created_at: DateTimeWithTimeZone,
     /// Время в серверной временной зоне (для удобства клиента)
     pub created_at_formatted: Option<String>,
     pub is_inbound: Option<bool>,
@@ -87,13 +89,13 @@ async fn send_message(
     
     // Находим клиента по chat_id
     let client = Client::find()
-        .filter(crate::database::client::models::Column::WazzupChat.eq(chat_id))
+        .filter(crate::database::client::clients::Column::WazzupChat.eq(chat_id))
         .one(&client_db)
         .await?
         .ok_or_else(|| AppError::NotFound("Client with this chat not found".to_string()))?;
     
     // Получаем информацию об отправителе
-    let sender = user::Entity::find_by_id(request.sender_id)
+            let sender = users::Entity::find_by_id(request.sender_id)
         .one(&client_db)
         .await?
         .ok_or_else(|| AppError::NotFound("Sender not found".to_string()))?;
@@ -103,7 +105,7 @@ async fn send_message(
         // Админ может писать кому угодно - пропускаем все проверки
     } else if let Some(responsible_user_id) = client.responsible_user_id {
         // Получаем информацию об ответственном
-        let responsible = user::Entity::find_by_id(responsible_user_id)
+        let responsible = users::Entity::find_by_id(responsible_user_id)
             .one(&client_db)
             .await?
             .ok_or_else(|| AppError::NotFound("Responsible user not found".to_string()))?;
@@ -147,8 +149,8 @@ async fn send_message(
     ).await?;
     
     // Получаем информацию о чате и канале для определения chatType
-    let chat_info = crate::database::client::models::wazzup_chat::Entity::find_by_id(chat_id)
-        .find_also_related(crate::database::client::models::wazzup_channel::Entity)
+    let chat_info = crate::database::client::wazzup_chats::Entity::find_by_id(chat_id)
+        .find_also_related(crate::database::client::wazzup_channels::Entity)
         .one(&client_db)
         .await?
         .ok_or_else(|| AppError::NotFound("Chat not found".to_string()))?;
@@ -248,7 +250,7 @@ async fn get_local_messages(
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse, AppError> {
     use sea_orm::{PaginatorTrait, QueryOrder};
-    use crate::database::client::models::wazzup_message;
+    use crate::database::client::wazzup_messages;
     
     let (company_id, chat_id) = path.into_inner();
     
@@ -257,21 +259,21 @@ async fn get_local_messages(
     
     // Находим клиента для данного чата
     let client = Client::find()
-        .filter(crate::database::client::models::Column::WazzupChat.eq(&chat_id))
+        .filter(crate::database::client::clients::Column::WazzupChat.eq(&chat_id))
         .one(&client_db)
         .await?;
     
     let client_id = client.map(|c| c.id);
     
     // Получаем сообщения из локальной базы данных
-    let messages = wazzup_message::Entity::find()
-        .filter(wazzup_message::Column::ChatId.eq(&chat_id))
-        .order_by_asc(wazzup_message::Column::CreatedAt)
+    let messages = wazzup_messages::Entity::find()
+        .filter(wazzup_messages::Column::ChatId.eq(&chat_id))
+        .order_by_asc(wazzup_messages::Column::CreatedAt)
         .all(&client_db)
         .await?;
     
-    let total = wazzup_message::Entity::find()
-        .filter(wazzup_message::Column::ChatId.eq(&chat_id))
+    let total = wazzup_messages::Entity::find()
+        .filter(wazzup_messages::Column::ChatId.eq(&chat_id))
         .count(&client_db)
         .await? as i64;
     

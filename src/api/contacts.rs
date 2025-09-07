@@ -2,13 +2,14 @@ use actix_web::{delete, get, put, web, HttpResponse};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };
+use sea_orm::prelude::DateTimeWithTimeZone;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
     api::helpers,
     database::{
-        client::models as client_models,
+        client,
     },
     errors::AppError,
     services::wazzup_api::{self, WazzupContact, WazzupContactData},
@@ -34,7 +35,8 @@ pub struct ContactWithWazzupData {
     pub email: String,
     pub phone: Option<String>,
     pub wazzup_chat: Option<String>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String, format = DateTime)]
+    pub created_at: DateTimeWithTimeZone,
     pub wazzup_contact: Option<WazzupContact>,
 }
 
@@ -50,7 +52,7 @@ async fn get_client_db_conn(
 
 /// Преобразует клиента из локальной БД в Wazzup контакт
 fn local_client_to_wazzup_contact(
-    client: &client_models::Model,
+    client: &client::clients::Model,
     responsible_user_id: &str,
 ) -> WazzupContact {
     let mut contact_data = Vec::new();
@@ -80,7 +82,7 @@ fn local_client_to_wazzup_contact(
 
 /// Обновляет клиента в Wazzup на основе локальных данных
 async fn sync_client_to_wazzup(
-    client: &client_models::Model,
+    client: &client::clients::Model,
     api_key: &str,
     responsible_user_id: &str,
     wazzup_api: &wazzup_api::WazzupApiService,
@@ -125,7 +127,7 @@ async fn get_contacts(
     let wazzup_api = wazzup_api::WazzupApiService::new();
 
     // Получаем клиентов из локальной БД
-    let local_clients = client_models::Entity::find().all(&client_db).await?;
+    let local_clients = client::clients::Entity::find().all(&client_db).await?;
     
     // Получаем контакты из Wazzup
     let wazzup_response = wazzup_api.get_contacts(&api_key).await.unwrap_or_else(|e| {
@@ -187,7 +189,7 @@ async fn get_contact_by_id(
     let wazzup_api = wazzup_api::WazzupApiService::new();
 
     // Получаем клиента из локальной БД
-    let local_client = client_models::Entity::find_by_id(contact_id)
+    let local_client = client::clients::Entity::find_by_id(contact_id)
         .one(&client_db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Contact {} not found", contact_id)))?;
@@ -237,16 +239,16 @@ async fn update_contact(
     let update_data = body.into_inner();
 
     // Находим существующий контакт
-    let existing_client = client_models::Entity::find_by_id(contact_id)
+    let existing_client = client::clients::Entity::find_by_id(contact_id)
         .one(&client_db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Contact {} not found", contact_id)))?;
 
     // Проверяем уникальность email, если он изменился
     if existing_client.email != update_data.email {
-        let email_exists = client_models::Entity::find()
-            .filter(client_models::Column::Email.eq(&update_data.email))
-            .filter(client_models::Column::Id.ne(contact_id))
+        let email_exists = client::clients::Entity::find()
+            .filter(client::clients::Column::Email.eq(&update_data.email))
+            .filter(client::clients::Column::Id.ne(contact_id))
             .one(&client_db)
             .await?;
 
@@ -259,7 +261,7 @@ async fn update_contact(
     }
 
     // Обновляем клиента в локальной БД
-    let mut active_client: client_models::ActiveModel = existing_client.clone().into();
+    let mut active_client: client::clients::ActiveModel = existing_client.clone().into();
     active_client.full_name = Set(update_data.full_name);
     active_client.email = Set(update_data.email);
     active_client.phone = Set(update_data.phone);
@@ -315,7 +317,7 @@ async fn delete_contact(
     let wazzup_api = wazzup_api::WazzupApiService::new();
 
     // Проверяем что контакт существует
-    let existing_client = client_models::Entity::find_by_id(contact_id)
+    let existing_client = client::clients::Entity::find_by_id(contact_id)
         .one(&client_db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Contact {} not found", contact_id)))?;
@@ -327,7 +329,7 @@ async fn delete_contact(
     }
 
     // Удаляем из локальной БД
-    let active_client: client_models::ActiveModel = existing_client.into();
+    let active_client: client::clients::ActiveModel = existing_client.into();
     active_client.delete(&client_db).await?;
 
     Ok(HttpResponse::NoContent().finish())
