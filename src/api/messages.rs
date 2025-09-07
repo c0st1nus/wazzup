@@ -1,5 +1,5 @@
 use actix_web::{get, post, web, HttpResponse};
-use sea_orm::{EntityTrait, ColumnTrait, QueryFilter, QueryOrder, QuerySelect, PaginatorTrait};
+use sea_orm::{EntityTrait, ColumnTrait, QueryFilter, QueryOrder, PaginatorTrait};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use crate::{
     api::helpers,
@@ -45,8 +45,6 @@ pub struct MessageResponse {
     pub client_id: Option<i64>, // Добавляем client_id
     #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeWithTimeZone,
-    /// Время в серверной временной зоне (для удобства клиента)
-    pub created_at_formatted: Option<String>,
     pub is_inbound: Option<bool>,
 }
 
@@ -249,7 +247,6 @@ async fn get_local_messages(
     app_state: web::Data<AppState>,
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse, AppError> {
-    use sea_orm::{PaginatorTrait, QueryOrder};
     use crate::database::client::wazzup_messages;
     
     let (company_id, chat_id) = path.into_inner();
@@ -281,9 +278,6 @@ async fn get_local_messages(
     let message_responses: Vec<MessageResponse> = messages
         .into_iter()
         .map(|msg| {
-            let created_at_formatted = helpers::convert_to_server_timezone(msg.created_at, &app_state)
-                .ok(); // Игнорируем ошибки конвертации timezone
-                
             MessageResponse {
                 id: msg.id,
                 message_type: determine_message_type_from_content(&msg.content),
@@ -291,7 +285,6 @@ async fn get_local_messages(
                 chat_id: msg.chat_id,
                 client_id, // Добавляем client_id
                 created_at: msg.created_at,
-                created_at_formatted,
                 is_inbound: msg.is_inbound,
             }
         })
