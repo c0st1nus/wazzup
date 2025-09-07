@@ -2,7 +2,7 @@ use sea_orm::{DatabaseConnection, EntityTrait};
 use crate::{
     database::main,
     errors::AppError,
-    AppState,
+    app_state::AppState,
 };
 use actix_web::web;
 
@@ -36,11 +36,7 @@ pub async fn get_client_db_connection(
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
-    
-    let client_db_url = app_state
-        .config
-        .client_database_url_template
-        .replace("{db_name}", &company.database_name);
-        
-    Ok(sea_orm::Database::connect(&client_db_url).await?)
+    // Используем пул вместо прямого подключения каждый раз
+    let conn = app_state.client_db_pool.get_connection(&company.database_name).await?;
+    Ok(conn)
 }

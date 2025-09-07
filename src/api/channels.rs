@@ -14,7 +14,7 @@ use crate::{
     },
     errors::AppError,
     services::wazzup_api::{self, ChannelListResponse, GenerateIframeLinkRequest},
-    AppState,
+    app_state::AppState,
 };
 
 // --- DTOs (Data Transfer Objects) ---
@@ -115,9 +115,7 @@ async fn get_channels(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new();
-
-    let channels_response = wazzup_api.get_channels(&api_key).await?;
+    let channels_response = app_state.wazzup_api.get_channels(&api_key).await?;
 
     let state_clone = app_state.clone();
     let response_clone = channels_response.clone();
@@ -157,9 +155,7 @@ async fn delete_channel(
                company_id, transport, channel_id, query.delete_chats);
     
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new();
-    
-    wazzup_api.delete_channel(&api_key, &transport, &channel_id, query.delete_chats).await?;
+    app_state.wazzup_api.delete_channel(&api_key, &transport, &channel_id, query.delete_chats).await?;
 
     // Получаем подключение к БД клиента используя pool manager
     let client_db = crate::api::helpers::get_client_db_connection(company_id, &app_state).await?;
@@ -207,9 +203,7 @@ async fn generate_wrapped_iframe_link(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new();
-
-    let original_response = wazzup_api.generate_channel_iframe_link(&api_key, &body).await?;
+    let original_response = app_state.wazzup_api.generate_channel_iframe_link(&api_key, &body).await?;
     let original_link = original_response.link.ok_or_else(|| AppError::Internal)?;
 
     let host = req.headers().get("host").and_then(|h| h.to_str().ok()).unwrap_or("");
@@ -301,9 +295,7 @@ async fn reinitialize_channel(
 ) -> Result<HttpResponse, AppError> {
     let (company_id, transport, channel_id) = path.into_inner();
     let api_key = get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new();
-
-    wazzup_api.reinitialize_channel(&api_key, &transport, &channel_id).await?;
+    app_state.wazzup_api.reinitialize_channel(&api_key, &transport, &channel_id).await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "message": "Channel reinitialization initiated"

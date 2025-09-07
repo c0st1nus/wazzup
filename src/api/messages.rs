@@ -1,5 +1,5 @@
 use actix_web::{get, post, web, HttpResponse};
-use sea_orm::{EntityTrait, ColumnTrait, QueryFilter, QueryOrder, PaginatorTrait};
+use sea_orm::{EntityTrait, ColumnTrait, QueryFilter, QueryOrder};
 use sea_orm::prelude::DateTimeWithTimeZone;
 use crate::{
     api::helpers,
@@ -7,7 +7,7 @@ use crate::{
     errors::AppError,
     services::wazzup_api::{self, SendMessageRequest},
     database::{client::{clients::{Entity as Client}, users}, types::MessageType},
-    AppState,
+    app_state::AppState,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -77,6 +77,7 @@ async fn send_message(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let request = body.into_inner();
+    if let Some(txt) = &request.text { if txt.len() > 4000 { return Err(AppError::InvalidInput("Message text too long".into())); } }
     
     // Получаем chat_id из запроса
     let chat_id = request.chat_id.as_ref()
@@ -170,8 +171,7 @@ async fn send_message(
     
     // Получаем API ключ и отправляем сообщение
     let api_key = helpers::get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new();
-    let response = wazzup_api.send_message(&api_key, &wazzup_request).await?;
+    let response = app_state.wazzup_api.send_message(&api_key, &wazzup_request).await?;
 
     Ok(HttpResponse::Ok().json(response))
 }
@@ -196,9 +196,7 @@ async fn get_messages(
 ) -> Result<HttpResponse, AppError> {
     let (company_id, chat_id) = path.into_inner();
     let api_key = helpers::get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new();
-
-    let response = wazzup_api.get_messages(&api_key, &chat_id).await?;
+    let response = app_state.wazzup_api.get_messages(&api_key, &chat_id).await?;
 
     Ok(HttpResponse::Ok().json(response))
 }
@@ -222,9 +220,7 @@ async fn get_unread_count(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let api_key = helpers::get_company_api_key(company_id, &app_state.db).await?;
-    let wazzup_api = wazzup_api::WazzupApiService::new();
-
-    let response = wazzup_api.get_unread_count(&api_key).await?;
+    let response = app_state.wazzup_api.get_unread_count(&api_key).await?;
 
     Ok(HttpResponse::Ok().json(response))
 }
@@ -268,11 +264,7 @@ async fn get_local_messages(
         .order_by_asc(wazzup_messages::Column::CreatedAt)
         .all(&client_db)
         .await?;
-    
-    let total = wazzup_messages::Entity::find()
-        .filter(wazzup_messages::Column::ChatId.eq(&chat_id))
-        .count(&client_db)
-        .await? as i64;
+    let total = messages.len() as i64; // избегаем второго запроса
     
     // Преобразуем в API ответ
     let message_responses: Vec<MessageResponse> = messages

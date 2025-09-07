@@ -11,7 +11,8 @@ use crate::{
     },
     errors::AppError,
     services::wazzup_api::{self, UpdateUserSettingsRequest},
-    AppState,
+    app_state::AppState,
+    api::validation,
 };
 
 // --- DTOs (Data Transfer Objects) ---
@@ -95,6 +96,11 @@ async fn create_user(
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
     let client_db = get_client_db_conn(company_id, &app_state).await?;
+
+    // Валидации
+    if !validation::validate_email_opt(&body.email) { return Err(AppError::InvalidInput("Invalid email format".into())); }
+    if !validation::ensure_max_len(&body.name, 150) { return Err(AppError::InvalidInput("Name too long".into())); }
+    if !validation::ensure_max_len(&body.login, 100) { return Err(AppError::InvalidInput("Login too long".into())); }
 
     // Проверка на существующего пользователя (опционально, но рекомендуется)
     let existing_user = client::users::Entity::find()

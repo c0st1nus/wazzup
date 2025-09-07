@@ -13,7 +13,8 @@ use crate::{
     },
     errors::AppError,
     services::wazzup_api::{self, WazzupContact, WazzupContactData},
-    AppState,
+    app_state::AppState,
+    api::validation,
 };
 
 // --- DTOs (Data Transfer Objects) ---
@@ -262,9 +263,15 @@ async fn update_contact(
 
     // Обновляем клиента в локальной БД
     let mut active_client: client::clients::ActiveModel = existing_client.clone().into();
+    if !validation::ensure_max_len(&update_data.full_name, 200) { return Err(AppError::InvalidInput("Full name too long".into())); }
+    if !validation::validate_email_opt(&update_data.email) { return Err(AppError::InvalidInput("Invalid email format".into())); }
+    let sanitized_phone = match update_data.phone {
+        Some(ref p) => validation::sanitize_phone(p).ok_or_else(|| AppError::InvalidInput("Invalid phone".into()))?,
+        None => String::new(),
+    };
     active_client.full_name = Set(update_data.full_name);
     active_client.email = Set(update_data.email);
-    active_client.phone = Set(update_data.phone);
+    active_client.phone = if sanitized_phone.is_empty() { Set(None) } else { Set(Some(sanitized_phone)) };
     active_client.wazzup_chat = Set(update_data.wazzup_chat);
 
     let updated_client = active_client.update(&client_db).await?;

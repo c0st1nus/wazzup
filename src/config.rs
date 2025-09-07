@@ -8,6 +8,7 @@ pub struct Config {
     pub client_database_url_template: String,
     pub public_url: Option<String>,
     pub timezone: Option<String>,
+    pub max_body_bytes: Option<usize>,
 }
 
 impl Config {
@@ -63,7 +64,24 @@ impl Config {
                 return Err(config::ConfigError::Message(format!("Invalid timezone: {}", tz_str)));
             }
         }
+
+        // Валидируем лимит тела (если указан): 1MB..500MB
+        if let Some(limit) = self.max_body_bytes {
+            let min = 1 * 1024 * 1024; // 1MB
+            let max = 500 * 1024 * 1024; // 500MB
+            if limit < min || limit > max {
+                return Err(config::ConfigError::Message(format!(
+                    "max_body_bytes must be between {} and {} bytes", min, max
+                )));
+            }
+        }
         
         Ok(())
+    }
+}
+
+impl Config {
+    pub fn effective_max_body_bytes(&self) -> usize {
+        self.max_body_bytes.unwrap_or(100 * 1024 * 1024)
     }
 }

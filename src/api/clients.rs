@@ -7,7 +7,8 @@ use crate::{
     errors::AppError,
     database::client::{clients::{Entity as Client}, wazzup_transfers, users},
     api::helpers,
-    AppState,
+    api::validation,
+    app_state::AppState,
 };
 
 // --- API Response Structures ---
@@ -78,6 +79,9 @@ async fn get_clients(
     let company_id = path.into_inner();
     let page = query.page.unwrap_or(1);
     let limit = query.limit.unwrap_or(20);
+    if page == 0 || limit == 0 || limit > 200 {
+        return Err(AppError::InvalidInput("Invalid pagination parameters".into()));
+    }
     let search = query.search.as_ref();
     
     // Получаем подключение к клиентской базе данных
@@ -124,6 +128,10 @@ async fn get_clients(
             None
         };
         
+        // Простейшая защита длины
+        if !validation::ensure_max_len(&client.full_name, 200) {
+            continue; // пропускаем аномально длинные записи
+        }
         client_responses.push(ClientResponse {
             id: client.id,
             full_name: client.full_name,

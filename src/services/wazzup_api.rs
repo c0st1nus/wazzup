@@ -14,12 +14,7 @@ pub struct WazzupApiService {
 
 // Generic request helpers
 impl WazzupApiService {
-    pub fn new() -> Self {
-        Self {
-            client: Client::new(),
-            base_url: WAZZUP_API_BASE_URL.to_string(),
-        }
-    }
+    pub fn new() -> Self { Self { client: Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap(), base_url: WAZZUP_API_BASE_URL.to_string() } }
 
     async fn request<T: Serialize, R: DeserializeOwned>(
         &self,

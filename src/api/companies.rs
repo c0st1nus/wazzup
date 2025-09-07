@@ -6,7 +6,8 @@ use utoipa::ToSchema;
 use crate::{
     database::main,
     errors::AppError,
-    AppState,
+    app_state::AppState,
+    api::validation,
 };
 
 // --- DTOs (Data Transfer Objects) ---
@@ -90,6 +91,10 @@ async fn create_company(
     data: web::Data<AppState>,
     new_company_dto: web::Json<CreateCompanyDto>,
 ) -> Result<HttpResponse, AppError> {
+    // Валидации
+    if !validation::validate_email_opt(&new_company_dto.email) { return Err(AppError::InvalidInput("Invalid email format".into())); }
+    if !validation::ensure_max_len(&new_company_dto.name, 200) { return Err(AppError::InvalidInput("Name too long".into())); }
+    if let Some(phone) = &new_company_dto.phone { if let Some(clean) = validation::sanitize_phone(phone) { if clean.len() < 6 { return Err(AppError::InvalidInput("Phone too short".into())); } } }
     let company = main::companies::ActiveModel {
         name: Set(new_company_dto.name.clone()),
         email: Set(new_company_dto.email.clone()),
@@ -134,10 +139,12 @@ async fn update_company(
 
     let mut active_model = company_to_update.into_active_model();
 
+    if !validation::validate_email_opt(&update_dto.email) { return Err(AppError::InvalidInput("Invalid email format".into())); }
+    if !validation::ensure_max_len(&update_dto.name, 200) { return Err(AppError::InvalidInput("Name too long".into())); }
     active_model.name = Set(update_dto.name.clone());
     active_model.email = Set(update_dto.email.clone());
     active_model.description = Set(update_dto.description.clone());
-    active_model.phone = Set(update_dto.phone.clone());
+    if let Some(phone) = &update_dto.phone { if let Some(clean) = validation::sanitize_phone(phone) { active_model.phone = Set(Some(clean)); } else { return Err(AppError::InvalidInput("Invalid phone".into())); } } else { active_model.phone = Set(None); }
     active_model.wazzup_api_key = Set(update_dto.wazzup_api_key.clone());
     active_model.is_active = Set(update_dto.is_active);
     active_model.updated_at = Set(Some(chrono::Utc::now().into()));

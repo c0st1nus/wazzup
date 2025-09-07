@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 
 use crate::{
     errors::AppError,
-    AppState,
+    app_state::AppState,
 };
 
 /// Структура для работы с временными зонами в API

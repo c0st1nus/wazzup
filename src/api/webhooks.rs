@@ -7,10 +7,10 @@ use crate::{
     database::main,
     errors::AppError,
     services::{
-        wazzup_api::{self, WebhookSubscriptionRequest, WebhookSubscriptions},
+    wazzup_api::{WebhookSubscriptionRequest, WebhookSubscriptions},
         webhook_handler,
     },
-    AppState,
+    app_state::AppState,
 };
 
 // --- DTOs (Data Transfer Objects) ---
@@ -161,10 +161,7 @@ async fn connect_webhooks(
     
     log::info!("Sending webhook request: {:?}", request);
 
-    let wazzup_api =
-        wazzup_api::WazzupApiService::new();
-    
-    let response = wazzup_api.connect_webhooks(&company.wazzup_api_key, &request).await?;
+    let response = app_state.wazzup_api.connect_webhooks(&company.wazzup_api_key, &request).await?;
 
     log::info!("Successfully connected webhooks for company {}, response: {}", company_id, response);
     Ok(HttpResponse::Ok().json(ConnectWebhooksResponse {

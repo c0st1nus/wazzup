@@ -1,6 +1,6 @@
 use actix_web::{web, App, HttpServer, middleware};
 use actix_files as fs;
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::Database;
 use std::env;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -12,17 +12,13 @@ mod config;
 mod database;
 mod errors;
 mod services;
+mod app_state; // ensure app_state visible to crate::* imports
 
 use crate::config::Config;
 use crate::api::{admin, channels, chats, companies, messages, timezone, users, webhooks, contacts, clients};
 use crate::database::{client, main, pool_manager::ClientDbPoolManager};
 use crate::services::wazzup_api;
-
-pub struct AppState {
-    pub db: DatabaseConnection,
-    pub config: Config,
-    pub client_db_pool: ClientDbPoolManager,
-}
+use crate::app_state::AppState;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -150,7 +146,11 @@ async fn main() -> std::io::Result<()> {
                 db: db.clone(),
                 config: config.clone(),
                 client_db_pool: client_db_pool.clone(),
+                wazzup_api: wazzup_api::WazzupApiService::new(),
             }))
+            // Глобальный лимит размера тела (1MB)
+            .app_data(actix_web::web::PayloadConfig::new(config.effective_max_body_bytes()))
+            .wrap(api::middleware::RequestId)
             .wrap(
                 Cors::default()
                     .allow_any_origin()

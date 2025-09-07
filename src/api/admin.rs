@@ -2,7 +2,7 @@ use actix_web::{get, web, HttpResponse};
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::{errors::AppError, AppState};
+use crate::{errors::AppError, app_state::AppState};
 
 #[derive(Serialize, ToSchema)]
 pub struct DatabasePoolStats {

@@ -7,7 +7,7 @@ use crate::{
     database::client,
     errors::AppError,
     services::wazzup_api::{self, SendMessageRequest},
-    AppState,
+    app_state::AppState,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

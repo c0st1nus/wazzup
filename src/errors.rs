@@ -1,6 +1,18 @@
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
 use sea_orm::DbErr;
 use thiserror::Error;
+use serde::Serialize;
+
+/// Унифицированная структура ответа об ошибке
+#[derive(Serialize)]
+pub struct ErrorResponse<'a> {
+    pub code: &'a str,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace_id: Option<String>,
+}
 
 #[derive(Error, Debug)]
 pub enum AppError {
@@ -39,8 +51,24 @@ impl ResponseError for AppError {
     }
 
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code()).json(serde_json::json!({
-            "error": self.to_string()
-        }))
+        let code = self.code();
+        let message = self.to_string();
+        // trace_id можно внедрить позже через middleware (корреляция)
+        let body = ErrorResponse { code, message, details: None, trace_id: None };
+        HttpResponse::build(self.status_code()).json(body)
+    }
+}
+
+impl AppError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            AppError::DbError(_) => "DB_ERROR",
+            AppError::ReqwestError(_) => "HTTP_ERROR",
+            AppError::JsonError(_) => "JSON_ERROR",
+            AppError::NotFound(_) => "NOT_FOUND",
+            AppError::InvalidInput(_) => "INVALID_INPUT",
+            AppError::Forbidden(_) => "FORBIDDEN",
+            AppError::Internal => "INTERNAL",
+        }
     }
 }
