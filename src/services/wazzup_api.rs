@@ -150,6 +150,65 @@ impl WazzupApiService {
             }
         }
     }
+
+    // Специальный метод для каналов через tech.wazzup24.com
+    async fn request_channels_api<T: Serialize, R: DeserializeOwned>(
+        &self,
+        api_key: &str,
+        method: Method,
+        path: &str,
+        body: Option<&T>,
+    ) -> Result<R, AppError> {
+        let url = format!("https://tech.wazzup24.com{}", path);
+        let mut request_builder = self.client.request(method.clone(), &url).bearer_auth(api_key);
+
+        if let Some(body_data) = body {
+            let body_json = serde_json::to_string(body_data).unwrap_or_else(|_| "Failed to serialize body".to_string());
+            log::info!("Sending {} request to {}: {}", method, url, body_json);
+            request_builder = request_builder.json(body_data);
+        } else {
+            log::info!("Sending {} request to {} (no body)", method, url);
+        }
+
+        let response = match request_builder.send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                log::error!("Failed to send request to {}: {}", url, e);
+                return Err(AppError::ReqwestError(e));
+            }
+        };
+
+        // Проверяем статус и собираем детальную информацию об ошибке
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error reading response body".to_string());
+            log::error!("Wazzup Channels API Error on path {}: {} - {}", path, status, error_text);
+            
+            return Err(AppError::InvalidInput(format!(
+                "Channels API request failed with status {}: {}",
+                status, error_text
+            )));
+        }
+
+        log::info!("Channels API request successful, status: {}", response.status());
+        
+        // Получаем текст ответа для логирования
+        let response_text = response.text().await?;
+        log::info!("Channels API response body: {}", response_text);
+        
+        // Пробуем парсить JSON из текста
+        match serde_json::from_str::<R>(&response_text) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                log::error!("Failed to parse channels response JSON: {}", e);
+                log::error!("Response text was: {}", response_text);
+                Err(AppError::InvalidInput(format!(
+                    "Failed to parse channels API response: {}",
+                    e
+                )))
+            }
+        }
+    }
 }
 
 // API method implementations
@@ -159,16 +218,16 @@ impl WazzupApiService {
         api_key: &str,
         request: &GenerateIframeLinkRequest,
     ) -> Result<GenerateIframeLinkResponse, AppError> {
-        self.request(api_key, Method::POST, "/iframe/generate-channels-link", Some(request)).await
+        self.request_channels_api(api_key, Method::POST, "/iframe/generate-channels-link", Some(request)).await
     }
 
     pub async fn get_channels(&self, api_key: &str) -> Result<ChannelListResponse, AppError> {
-        self.request(api_key, Method::GET, "/channels/list", None::<&()>).await
+        self.request_channels_api(api_key, Method::GET, "/channels/list", None::<&()>).await
     }
     
     pub async fn reinitialize_channel(&self, api_key: &str, transport: &str, channel_id: &str) -> Result<(), AppError> {
         let path = format!("/channels/{}/{}/reinit", transport, channel_id);
-        let _: Value = self.request(api_key, Method::POST, &path, None::<&()>).await?;
+        let _: Value = self.request_channels_api(api_key, Method::POST, &path, None::<&()>).await?;
         Ok(())
     }
 
@@ -176,7 +235,7 @@ impl WazzupApiService {
         let path = format!("/channels/{}/{}", transport, channel_id);
         let body = serde_json::json!({ "deleteChats": delete_chats });
         log::info!("Deleting channel: transport={}, channel_id={}, deleteChats={}", transport, channel_id, delete_chats);
-        let _: Value = self.request(api_key, Method::DELETE, &path, Some(&body)).await?;
+        let _: Value = self.request_channels_api(api_key, Method::DELETE, &path, Some(&body)).await?;
         Ok(())
     }
 
