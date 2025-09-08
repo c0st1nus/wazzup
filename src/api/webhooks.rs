@@ -101,8 +101,14 @@ async fn handle_webhook(
         return Err(AppError::InvalidInput("Webhook payload too large".to_string()));
     }
     
-    webhook_handler::handle_webhook(company_id, body.into_inner(), &app_state.db, &app_state.config)
-        .await?;
+    webhook_handler::handle_webhook(
+        company_id, 
+        body.into_inner(), 
+        &app_state.db, 
+        &app_state.config,
+        &app_state.bot_service,
+        &app_state.wazzup_api,
+    ).await?;
     Ok(HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })))
 }
 
@@ -198,7 +204,14 @@ async fn test_webhook(
         contacts: None,
     };
 
-    webhook_handler::handle_webhook(company_id, test_webhook_request, &app_state.db, &app_state.config).await?;
+    webhook_handler::handle_webhook(
+        company_id, 
+        test_webhook_request, 
+        &app_state.db, 
+        &app_state.config,
+        &app_state.bot_service,
+        &app_state.wazzup_api,
+    ).await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "status": "ok",

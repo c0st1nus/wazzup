@@ -4021,6 +4021,7 @@ dependencies = [
  "config",
  "dotenvy",
  "env_logger",
+ "fastrand",
  "futures-util",
  "lazy_static",
  "log",

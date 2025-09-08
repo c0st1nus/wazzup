@@ -80,6 +80,7 @@ CREATE TABLE "public"."users" (
     "role" varchar(255) NOT NULL DEFAULT 'manager',
     "resource_id" bigint,
     "location_id" bigint,
+    "hook" varchar(500),
     "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
     CONSTRAINT "pk_users_id" PRIMARY KEY ("id")
 );

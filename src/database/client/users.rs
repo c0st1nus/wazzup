@@ -19,6 +19,7 @@ pub struct Model {
     pub role: String,
     pub resource_id: Option<i64>,
     pub location_id: Option<i64>,
+    pub hook: Option<String>,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeWithTimeZone,
 }

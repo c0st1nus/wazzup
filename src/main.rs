@@ -17,7 +17,7 @@ mod app_state; // ensure app_state visible to crate::* imports
 use crate::config::Config;
 use crate::api::{admin, channels, chats, companies, messages, timezone, users, webhooks, contacts, clients};
 use crate::database::{client, main, pool_manager::ClientDbPoolManager};
-use crate::services::wazzup_api;
+use crate::services::{wazzup_api, bot_service};
 use crate::app_state::AppState;
 
 #[actix_web::main]
@@ -147,6 +147,7 @@ async fn main() -> std::io::Result<()> {
                 config: config.clone(),
                 client_db_pool: client_db_pool.clone(),
                 wazzup_api: wazzup_api::WazzupApiService::new(),
+                bot_service: bot_service::BotService::new(),
             }))
             // Глобальный лимит размера тела (1MB)
             .app_data(actix_web::web::PayloadConfig::new(config.effective_max_body_bytes()))

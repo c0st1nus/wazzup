@@ -133,8 +133,8 @@ async fn send_message(
         }
     }
     
-    // Проверяем, что отправитель не quality_controll
-    if sender.role == "quality_controll" {
+    // Проверяем, что отправитель не quality_control
+    if sender.role == "quality_control" {
         return Err(AppError::Forbidden("Quality control users cannot send messages".to_string()));
     }
     

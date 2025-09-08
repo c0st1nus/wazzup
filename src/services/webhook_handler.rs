@@ -6,7 +6,8 @@ use crate::database::client::{
     users,
     clients::{Entity as ClientEntity, Column as ClientColumn, ActiveModel as ClientActiveModel},
 };
-use crate::services::wazzup_api::{WazzupApiService, WazzupContact, WazzupContactData};
+use crate::services::wazzup_api::{WazzupApiService, WazzupContact, WazzupContactData, SendMessageRequest};
+use crate::services::bot_service::{BotService, BotHookRequest};
 use sea_orm::{Database, DatabaseConnection, EntityTrait, Set, NotSet, ActiveModelTrait, QueryFilter, ColumnTrait};
 use utoipa::ToSchema;
 use crate::errors::AppError;
@@ -177,6 +178,8 @@ pub async fn handle_webhook(
     webhook: WebhookRequest,
     main_db: &DatabaseConnection,
     config: &Config,
+    bot_service: &BotService,
+    wazzup_api: &WazzupApiService,
 ) -> Result<(), AppError> {
     let company = main::companies::Entity::find_by_id(company_id)
         .one(main_db)
@@ -264,7 +267,7 @@ pub async fn handle_webhook(
     }
 
     if let Some(messages) = webhook.messages {
-        handle_messages(company_id, messages, &client_db, &company).await?;
+        handle_messages(company_id, messages, &client_db, &company, bot_service, wazzup_api).await?;
     }
 
     // ... Handle other webhook types
@@ -487,6 +490,8 @@ async fn handle_messages(
     messages: Vec<WebhookMessage>,
     client_db: &DatabaseConnection,
     company: &main::companies::Model,
+    bot_service: &BotService,
+    wazzup_api: &WazzupApiService,
 ) -> Result<(), AppError> {
     log::info!("=== HANDLING MESSAGES START ===");
     log::info!("Company ID: {}, Messages count: {}", company_id, messages.len());
@@ -784,6 +789,20 @@ async fn handle_messages(
                 log::info!("  direction_status: {:?}", message.direction_status);
                 log::info!("  author_name: {:?}", message.author_name);
                 log::info!("  author_id: {:?}", message.author_id);
+                
+                // Обрабатываем бота только для входящих сообщений
+                if is_inbound {
+                    if let Err(e) = handle_bot_interaction(
+                        company_id,
+                        &message,
+                        client_db,
+                        company,
+                        bot_service,
+                        wazzup_api,
+                    ).await {
+                        log::error!("Bot interaction failed: {}", e);
+                    }
+                }
             },
             Err(e) => {
                 log::error!("FAILED to save message '{}': {}", msg.message_id, e);
@@ -1037,4 +1056,187 @@ async fn create_wazzup_contact(
     }
     
     log::info!("=== CREATE WAZZUP CONTACT END ===");
+}
+
+/// Обрабатывает взаимодействие с ботом для входящих сообщений
+async fn handle_bot_interaction(
+    company_id: i64,
+    message: &wazzup_messages::Model,
+    client_db: &DatabaseConnection,
+    company: &main::companies::Model,
+    bot_service: &BotService,
+    wazzup_api: &WazzupApiService,
+) -> Result<(), AppError> {
+    log::info!("=== BOT INTERACTION START ===");
+    
+    // Находим клиента по chat_id
+    let client = ClientEntity::find()
+        .filter(ClientColumn::WazzupChat.eq(&message.chat_id))
+        .one(client_db)
+        .await?;
+    
+    let Some(client) = client else {
+        log::info!("No client found for chat_id: {}", message.chat_id);
+        return Ok(());
+    };
+    
+    // Проверяем, есть ли ответственный пользователь
+    let Some(responsible_user_id) = client.responsible_user_id else {
+        log::info!("No responsible user for client: {}", client.id);
+        return Ok(());
+    };
+    
+    // Получаем hook URL бота
+    let hook_url = bot_service
+        .get_bot_hook_url(client_db, responsible_user_id)
+        .await?;
+    
+    let Some(hook_url) = hook_url else {
+        log::info!("Responsible user {} is not a bot or has no hook URL", responsible_user_id);
+        return Ok(());
+    };
+    
+    // Извлекаем текст сообщения из JSON контента
+    let message_text = extract_message_text(&message.content);
+    
+    // Создаем запрос к боту
+    let bot_request = BotHookRequest {
+        message: message_text,
+        client: client.id,
+        company: company_id,
+    };
+    
+    log::info!("Sending request to bot: {}", hook_url);
+    
+    // Отправляем запрос к боту
+    match bot_service.send_hook_request(&hook_url, &bot_request).await {
+        Ok(bot_response) => {
+            log::info!("Bot response: status={}, message={}", bot_response.status, bot_response.message);
+            
+            match bot_response.status.as_str() {
+                "success" => {
+                    // Отправляем ответ бота через Wazzup API
+                    if let Err(e) = send_bot_message(
+                        &message.chat_id,
+                        &bot_response.message,
+                        responsible_user_id,
+                        client_db,
+                        company,
+                        wazzup_api,
+                    ).await {
+                        log::error!("Failed to send bot message: {}", e);
+                    }
+                },
+                "error" => {
+                    log::warn!("Bot returned error: {}", bot_response.message);
+                    // Перенаправляем клиента на случайного менеджера
+                    if let Err(e) = transfer_to_random_manager(
+                        client.id,
+                        client_db,
+                        bot_service,
+                    ).await {
+                        log::error!("Failed to transfer to random manager: {}", e);
+                    }
+                },
+                _ => {
+                    log::warn!("Unknown bot response status: {}", bot_response.status);
+                }
+            }
+        },
+        Err(e) => {
+            log::error!("Failed to contact bot: {}", e);
+            // Перенаправляем клиента на случайного менеджера при ошибке связи с ботом
+            if let Err(e) = transfer_to_random_manager(
+                client.id,
+                client_db,
+                bot_service,
+            ).await {
+                log::error!("Failed to transfer to random manager after bot error: {}", e);
+            }
+        }
+    }
+    
+    log::info!("=== BOT INTERACTION END ===");
+    Ok(())
+}
+
+/// Извлекает текст сообщения из JSON контента
+fn extract_message_text(content: &serde_json::Value) -> String {
+    if let Some(content_array) = content.as_array() {
+        for item in content_array {
+            if let Some(item_type) = item.get("type").and_then(|t| t.as_str()) {
+                if item_type == "text" {
+                    if let Some(text) = item.get("content").and_then(|c| c.as_str()) {
+                        return text.to_string();
+                    }
+                }
+            }
+        }
+    }
+    "".to_string()
+}
+
+/// Отправляет сообщение от бота через Wazzup API
+async fn send_bot_message(
+    chat_id: &str,
+    message_text: &str,
+    sender_id: i64,
+    client_db: &DatabaseConnection,
+    company: &main::companies::Model,
+    wazzup_api: &WazzupApiService,
+) -> Result<(), AppError> {
+    log::info!("Sending bot message to chat: {}", chat_id);
+    
+    // Получаем информацию о чате и канале
+    let chat_info = wazzup_chats::Entity::find_by_id(chat_id)
+        .find_also_related(wazzup_channels::Entity)
+        .one(client_db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Chat not found".to_string()))?;
+    
+    let (chat, channel) = chat_info;
+    let channel_info = channel.ok_or_else(|| AppError::NotFound("Channel not found".to_string()))?;
+    
+    // Создаем запрос для отправки сообщения
+    let send_request = SendMessageRequest {
+        chat_id: Some(chat_id.to_string()),
+        channel_id: Some(chat.channel_id),
+        chat_type: Some(channel_info.r#type),
+        sender_id,
+        text: Some(message_text.to_string()),
+        content_uri: None,
+        crm_user_id: Some(sender_id.to_string()),
+        crm_message_id: None,
+    };
+    
+    // Отправляем сообщение
+    wazzup_api.send_message(&company.wazzup_api_key, &send_request).await?;
+    
+    log::info!("Bot message sent successfully");
+    Ok(())
+}
+
+/// Переназначает ответственного на случайного менеджера
+async fn transfer_to_random_manager(
+    client_id: i64,
+    client_db: &DatabaseConnection,
+    bot_service: &BotService,
+) -> Result<(), AppError> {
+    log::info!("Transferring client {} to random manager", client_id);
+    
+    // Выбираем случайного менеджера
+    let manager = bot_service.select_random_manager(client_db).await?;
+    
+    // Обновляем ответственного для клиента
+    let mut client: ClientActiveModel = ClientEntity::find_by_id(client_id)
+        .one(client_db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Client not found".to_string()))?
+        .into();
+    
+    client.responsible_user_id = Set(Some(manager.id));
+    client.update(client_db).await?;
+    
+    log::info!("Client {} transferred to manager {}", client_id, manager.id);
+    Ok(())
 }

@@ -34,6 +34,9 @@ pub enum AppError {
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    #[error("External API error: {0}")]
+    ExternalApiError(String),
+
     #[error("Internal server error")]
     Internal,
 }
@@ -41,7 +44,7 @@ pub enum AppError {
 impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
         match self {
-            AppError::DbError(_) | AppError::ReqwestError(_) | AppError::JsonError(_) | AppError::Internal => {
+            AppError::DbError(_) | AppError::ReqwestError(_) | AppError::JsonError(_) | AppError::Internal | AppError::ExternalApiError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
@@ -68,6 +71,7 @@ impl AppError {
             AppError::NotFound(_) => "NOT_FOUND",
             AppError::InvalidInput(_) => "INVALID_INPUT",
             AppError::Forbidden(_) => "FORBIDDEN",
+            AppError::ExternalApiError(_) => "EXTERNAL_API_ERROR",
             AppError::Internal => "INTERNAL",
         }
     }
