@@ -1,14 +1,15 @@
-use crate::database::client::users;
+use crate::database::models::users;
 use crate::errors::AppError;
 use reqwest::Client;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
 pub struct BotHookRequest {
     pub message: String,
-    pub client: i64,
-    pub company: i64,
+    pub client: String,
+    pub company: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,10 +66,9 @@ impl BotService {
     ) -> Result<users::Model, AppError> {
         use sea_orm::QueryOrder;
 
-        // Получаем всех активных менеджеров (исключая ботов и quality_control)
         let managers = users::Entity::find()
             .filter(users::Column::Role.eq("manager"))
-            .order_by_asc(users::Column::Id) // Для детерминированности
+            .order_by_asc(users::Column::Id)
             .all(db)
             .await?;
 
@@ -76,8 +76,6 @@ impl BotService {
             return Err(AppError::NotFound("No managers available".to_string()));
         }
 
-        // Выбираем случайного менеджера
-        // TODO: Здесь можно реализовать более сложную логику балансировки нагрузки
         let index = fastrand::usize(..managers.len());
         Ok(managers[index].clone())
     }
@@ -86,15 +84,15 @@ impl BotService {
     pub async fn get_bot_hook_url(
         &self,
         db: &DatabaseConnection,
-        user_id: i64,
+        user_id: &Uuid,
     ) -> Result<Option<String>, AppError> {
-        let user = users::Entity::find_by_id(user_id)
+        let user = users::Entity::find_by_id(user_id.as_bytes().to_vec())
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
-        if user.role == "bot" {
-            Ok(user.hook)
+        if user.role.as_deref() == Some("bot") {
+            Ok(user.bot_hook)
         } else {
             Ok(None)
         }

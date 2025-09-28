@@ -50,6 +50,7 @@ async fn main() -> std::io::Result<()> {
             contacts::update_contact,
             contacts::delete_contact,
             // Webhooks
+            webhooks::validate_webhook,
             webhooks::handle_webhook,
             webhooks::connect_webhooks,
             webhooks::test_webhook,
@@ -137,7 +138,7 @@ async fn main() -> std::io::Result<()> {
                     .use_last_modified(true),
             )
             .service(
-                web::scope("/api")
+                web::scope("/api/v2")
                     .wrap(middleware::NormalizePath::trim())
                     .configure(channels::init_routes)
                     .configure(chats::init_routes)

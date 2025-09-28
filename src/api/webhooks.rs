@@ -2,10 +2,12 @@ use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use sea_orm::EntityTrait;
 use serde::Serialize;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{
+    api::helpers::{get_company_api_key, uuid_to_bytes},
     app_state::AppState,
-    database::main,
+    database::models::companies,
     errors::AppError,
     services::{
         wazzup_api::{WebhookSubscriptionRequest, WebhookSubscriptions},
@@ -25,13 +27,15 @@ pub struct ConnectWebhooksResponse {
 
 // --- Route Handlers ---
 
+fn parse_company_id(raw: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(raw).map_err(|_| AppError::InvalidInput("Invalid company ID".to_string()))
+}
+
 #[utoipa::path(
     get,
     path = "/api/webhook/{id}",
     tag = "Webhooks",
-    params(
-        ("id" = i64, Path, description = "Company ID")
-    ),
+    params(("id" = String, Path, description = "Company UUID")),
     responses(
         (status = 200, description = "Webhook validation successful", body = inline(serde_json::Value)),
         (status = 404, description = "Company not found")
@@ -40,25 +44,16 @@ pub struct ConnectWebhooksResponse {
 #[get("/{id}")]
 async fn validate_webhook(
     app_state: web::Data<AppState>,
-    path: web::Path<i64>,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, AppError> {
-    let company_id = path.into_inner();
+    let company_uuid = parse_company_id(&path.into_inner())?;
+    let company_bytes = uuid_to_bytes(&company_uuid);
 
-    // Базовая валидация company_id
-    if company_id <= 0 {
-        log::error!("Invalid company_id for validation: {}", company_id);
-        return Err(AppError::InvalidInput("Invalid company ID".to_string()));
-    }
-
-    log::info!("Webhook validation request for company {}", company_id);
-
-    // Проверяем, что компания существует
-    let _company = main::companies::Entity::find_by_id(company_id)
+    companies::Entity::find_by_id(company_bytes)
         .one(&app_state.db)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
+        .ok_or_else(|| AppError::NotFound("Company not found".to_string()))?;
 
-    // Возвращаем статус 200 для валидации webhook'а
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "status": "ok",
         "message": "Webhook endpoint is valid"
@@ -69,9 +64,7 @@ async fn validate_webhook(
     post,
     path = "/api/webhook/{id}",
     tag = "Webhooks",
-    params(
-        ("id" = i64, Path, description = "Company ID")
-    ),
+    params(("id" = String, Path, description = "Company UUID")),
     request_body = webhook_handler::WebhookRequest,
     responses(
         (status = 200, description = "Webhook processed successfully", body = inline(serde_json::Value)),
@@ -83,36 +76,28 @@ async fn validate_webhook(
 #[post("/{id}")]
 async fn handle_webhook(
     app_state: web::Data<AppState>,
-    path: web::Path<i64>,
+    path: web::Path<String>,
     body: web::Json<webhook_handler::WebhookRequest>,
 ) -> Result<HttpResponse, AppError> {
-    let company_id = path.into_inner();
+    let company_uuid = parse_company_id(&path.into_inner())?;
 
-    // Базовая валидация company_id
-    if company_id <= 0 {
-        log::error!("Invalid company_id: {}", company_id);
-        return Err(AppError::InvalidInput("Invalid company ID".to_string()));
-    }
-
-    // Ограничиваем размер payload
-    let json_string = serde_json::to_string(&body)?;
+    let payload = body.into_inner();
+    let json_string = serde_json::to_string(&payload)?;
     if json_string.len() > 1024 * 1024 {
-        // 1MB limit
-        log::error!("Webhook payload too large: {} bytes", json_string.len());
         return Err(AppError::InvalidInput(
             "Webhook payload too large".to_string(),
         ));
     }
 
     webhook_handler::handle_webhook(
-        company_id,
-        body.into_inner(),
+        company_uuid,
+        payload,
         &app_state.db,
-        &app_state.config,
         &app_state.bot_service,
         &app_state.wazzup_api,
     )
     .await?;
+
     Ok(HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })))
 }
 
@@ -120,12 +105,10 @@ async fn handle_webhook(
     get,
     path = "/api/webhook/{id}/connect",
     tag = "Webhooks",
-    params(
-        ("id" = i64, Path, description = "Company ID")
-    ),
+    params(("id" = String, Path, description = "Company UUID")),
     responses(
         (status = 200, description = "Webhooks connected successfully", body = ConnectWebhooksResponse),
-        (status = 400, description = "Failed to connect webhooks, e.g., test POST failed"),
+        (status = 400, description = "Failed to connect webhooks"),
         (status = 404, description = "Company not found or API key not set")
     )
 )]
@@ -133,31 +116,18 @@ async fn handle_webhook(
 async fn connect_webhooks(
     app_state: web::Data<AppState>,
     req: HttpRequest,
-    path: web::Path<i64>,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, AppError> {
-    let company_id = path.into_inner();
-    log::info!("Connecting webhooks for company {}", company_id);
-
-    let company = main::companies::Entity::find_by_id(company_id)
-        .one(&app_state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
-
-    if company.wazzup_api_key.is_empty() {
-        return Err(AppError::InvalidInput(
-            "Company API key not set".to_string(),
-        ));
-    }
+    let company_uuid = parse_company_id(&path.into_inner())?;
+    let api_key = get_company_api_key(&company_uuid, &app_state.db).await?;
 
     let webhooks_uri = if let Some(public_url) = &app_state.config.public_url {
-        format!("{}/api/webhook/{}", public_url, company_id)
+        format!("{}/api/webhook/{}", public_url, company_uuid)
     } else {
         let host = req.connection_info().host().to_string();
         let scheme = req.connection_info().scheme().to_string();
-        format!("{}://{}/api/webhook/{}", scheme, host, company_id)
+        format!("{}://{}/api/webhook/{}", scheme, host, company_uuid)
     };
-
-    log::info!("Generated webhooks_uri: {}", webhooks_uri);
 
     let subscriptions = WebhookSubscriptions {
         messages_and_statuses: true,
@@ -171,22 +141,15 @@ async fn connect_webhooks(
         subscriptions: subscriptions.clone(),
     };
 
-    log::info!("Sending webhook request: {:?}", request);
-
-    let response = app_state
+    app_state
         .wazzup_api
-        .connect_webhooks(&company.wazzup_api_key, &request)
+        .connect_webhooks(&api_key, &request)
         .await?;
 
-    log::info!(
-        "Successfully connected webhooks for company {}, response: {}",
-        company_id,
-        response
-    );
     Ok(HttpResponse::Ok().json(ConnectWebhooksResponse {
         ok: true,
         webhooks_uri,
-        subscriptions: request.subscriptions,
+        subscriptions,
     }))
 }
 
@@ -194,9 +157,7 @@ async fn connect_webhooks(
     post,
     path = "/api/webhook/{id}/test",
     tag = "Webhooks",
-    params(
-        ("id" = i64, Path, description = "Company ID")
-    ),
+    params(("id" = String, Path, description = "Company UUID")),
     responses(
         (status = 200, description = "Test webhook processed successfully"),
         (status = 400, description = "Test webhook failed")
@@ -205,10 +166,9 @@ async fn connect_webhooks(
 #[post("/{id}/test")]
 async fn test_webhook(
     app_state: web::Data<AppState>,
-    path: web::Path<i64>,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, AppError> {
-    let company_id = path.into_inner();
-    log::info!("Test webhook endpoint called for company {}", company_id);
+    let company_uuid = parse_company_id(&path.into_inner())?;
 
     let test_webhook_request = webhook_handler::WebhookRequest {
         test: Some(true),
@@ -217,10 +177,9 @@ async fn test_webhook(
     };
 
     webhook_handler::handle_webhook(
-        company_id,
+        company_uuid,
         test_webhook_request,
         &app_state.db,
-        &app_state.config,
         &app_state.bot_service,
         &app_state.wazzup_api,
     )

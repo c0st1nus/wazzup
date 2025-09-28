@@ -2,11 +2,12 @@ use std::collections::{HashMap, HashSet};
 
 use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use chrono::{DateTime, Utc};
-use sea_orm::prelude::{DateTimeUtc, JsonValue};
+use sea_orm::prelude::DateTimeUtc;
 use sea_orm::{
     ColumnTrait, EntityTrait, FromQueryResult, JoinType, QueryFilter, QueryOrder, QuerySelect,
-    sea_query::Expr,
+    RelationTrait, sea_query::Expr, sea_query::extension::postgres::PgExpr,
 };
+use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
 use crate::{
@@ -198,7 +199,7 @@ pub async fn get_chat(
         preview.last_message = Some(build_message_view(message, sender)?);
     }
 
-    Ok(HttpResponse::Ok().json::<ChatDetails>(preview))
+    Ok(HttpResponse::Ok().json(preview))
 }
 
 #[utoipa::path(
@@ -313,7 +314,7 @@ pub async fn send_chat_message(
     }
     let user_map = load_users(&app_state, &user_ids).await?;
 
-    let (preview, assigned_to_requestor) = build_chat_preview(&ctx, &record, 0, &user_map)?;
+    let (_, assigned_to_requestor) = build_chat_preview(&ctx, &record, 0, &user_map)?;
 
     if !assigned_to_requestor && !ctx.is_admin() {
         return Err(AppError::Forbidden(
@@ -346,9 +347,21 @@ pub async fn send_chat_message(
         crm_message_id: None,
     };
 
-    let api_key = record.company.wazzup_api_key.clone().ok_or_else(|| {
-        AppError::InvalidInput("Wazzup API key is not configured for the company".to_string())
-    })?;
+    let api_key = ctx
+        .company
+        .wazzup_api_key
+        .as_ref()
+        .and_then(|key| {
+            let trimmed = key.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .ok_or_else(|| {
+            AppError::InvalidInput("Wazzup API key is not configured for the company".to_string())
+        })?;
 
     let response = app_state
         .wazzup_api
@@ -391,17 +404,19 @@ async fn load_company_chats(
         .filter(clients::Column::CompanyId.eq(ctx.company_id_bytes.clone()));
 
     if let Some(filter) = filter.filter(|value| !value.trim().is_empty()) {
-        query = query.filter(chats::Column::Name.ilike(format!("%{}%", filter.trim())));
+        let pattern = format!("%{}%", filter.trim());
+        query = query.filter(Expr::col(chats::Column::Name).ilike(pattern));
     }
 
-    let query = query.find_also_related(clients::Entity);
-    let query = query.find_also_related(channels::Entity);
-
-    let results = query.all(&app_state.db).await?;
+    let results = query
+        .find_also_related(clients::Entity)
+        .find_also_related(channels::Entity)
+        .all(&app_state.db)
+        .await?;
 
     Ok(results
         .into_iter()
-        .map(|((chat, client), channel)| ChatRecord {
+        .map(|(chat, client, channel)| ChatRecord {
             chat,
             client,
             channel,
@@ -427,7 +442,7 @@ async fn load_single_chat(
         .await?
         .ok_or_else(|| AppError::NotFound("Chat not found".to_string()))?;
 
-    let ((chat, client), channel) = result;
+    let (chat, client, channel) = result;
 
     Ok(ChatRecord {
         chat,

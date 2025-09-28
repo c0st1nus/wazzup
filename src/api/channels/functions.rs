@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use actix_web::{HttpRequest, web};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
     Set,
@@ -8,101 +7,26 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::{
-    app_state::AppState,
-    database::models::{channel_settings, channels, companies, company_users},
+    api::helpers::get_company_api_key,
+    database::models::{channel_settings, channels},
     errors::AppError,
     services::wazzup_api::ChannelListResponse,
 };
 
-#[derive(Clone)]
-pub struct AuthContext {
-    pub company_uuid: Uuid,
-    pub user_uuid: Uuid,
-    pub company_id_bytes: Vec<u8>,
-    pub user_id_bytes: Vec<u8>,
-    pub api_key: String,
-}
+pub use crate::api::context::{AdminContext, bytes_to_uuid, resolve_admin_context};
+pub use crate::api::helpers::uuid_to_bytes;
 
-pub fn uuid_to_bytes(uuid: &Uuid) -> Vec<u8> {
-    uuid.as_bytes().to_vec()
-}
-
-pub fn bytes_to_uuid(bytes: &[u8]) -> Option<Uuid> {
-    Uuid::from_slice(bytes).ok()
-}
-
-fn parse_uuid_cookie(req: &HttpRequest, name: &str) -> Result<Uuid, AppError> {
-    let cookie = req
-        .cookie(name)
-        .ok_or_else(|| AppError::Unauthorized(format!("Missing `{}` cookie", name)))?;
-
-    Uuid::parse_str(cookie.value())
-        .map_err(|_| AppError::Unauthorized(format!("Invalid `{}` cookie", name)))
-}
+pub type AuthContext = AdminContext;
 
 pub async fn get_company_api_key_by_uuid(
     company_uuid: &Uuid,
     db: &DatabaseConnection,
 ) -> Result<String, AppError> {
-    let company_id_bytes = uuid_to_bytes(company_uuid);
-    let company = companies::Entity::find_by_id(company_id_bytes)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized("Company not found".to_string()))?;
-
-    let api_key = company
-        .wazzup_api_key
-        .and_then(|key| {
-            let trimmed = key.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        })
-        .ok_or_else(|| {
-            AppError::InvalidInput("Wazzup API key is not configured for the company".to_string())
-        })?;
-
-    Ok(api_key)
-}
-
-pub async fn resolve_admin_context(
-    req: &HttpRequest,
-    app_state: &web::Data<AppState>,
-) -> Result<AuthContext, AppError> {
-    let user_uuid = parse_uuid_cookie(req, "user_id")?;
-    let company_uuid = parse_uuid_cookie(req, "company_id")?;
-
-    let company_id_bytes = uuid_to_bytes(&company_uuid);
-    let user_id_bytes = uuid_to_bytes(&user_uuid);
-
-    let membership = company_users::Entity::find()
-        .filter(company_users::Column::CompanyId.eq(company_id_bytes.clone()))
-        .filter(company_users::Column::UserId.eq(user_id_bytes.clone()))
-        .one(&app_state.db)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized("User is not attached to the company".to_string()))?;
-
-    let role_ok = membership
-        .role
-        .as_deref()
-        .map(|role| role.eq_ignore_ascii_case("admin"))
-        .unwrap_or(false);
-
-    if !role_ok {
-        return Err(AppError::Forbidden("Admin role required".to_string()));
+    match get_company_api_key(company_uuid, db).await {
+        Ok(key) => Ok(key),
+        Err(AppError::NotFound(_)) => Err(AppError::Unauthorized("Company not found".to_string())),
+        Err(err) => Err(err),
     }
-
-    let api_key = get_company_api_key_by_uuid(&company_uuid, &app_state.db).await?;
-
-    Ok(AuthContext {
-        company_uuid,
-        user_uuid,
-        company_id_bytes,
-        user_id_bytes,
-        api_key,
-    })
 }
 
 pub async fn load_user_channel_access(

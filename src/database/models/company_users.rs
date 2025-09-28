@@ -6,10 +6,8 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "company_users")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Binary(16)")]
-    pub id: Vec<u8>,
-    #[sea_orm(column_type = "Binary(16)")]
     pub company_id: Vec<u8>,
-    #[sea_orm(column_type = "Binary(16)")]
+    #[sea_orm(primary_key, auto_increment = false, column_type = "Binary(16)")]
     pub user_id: Vec<u8>,
     pub role: Option<String>,
 }
