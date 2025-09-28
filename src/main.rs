@@ -1,24 +1,23 @@
-use actix_web::{web, App, HttpServer, middleware};
+use actix_cors::Cors;
 use actix_files as fs;
+use actix_web::{App, HttpServer, middleware, web};
+use dotenvy::dotenv;
 use sea_orm::Database;
 use std::env;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
-use dotenvy::dotenv;
-use actix_cors::Cors;
 
 mod api;
+mod app_state;
 mod config;
 mod database;
 mod errors;
-mod services;
-mod app_state; // ensure app_state visible to crate::* imports
+mod services; // ensure app_state visible to crate::* imports
 
-use crate::config::Config;
-use crate::api::{channels, chats, companies, messages, timezone, users, webhooks, contacts, clients};
-use crate::database::models;
-use crate::services::{wazzup_api, bot_service};
+use crate::api::{channels, chats, contacts, webhooks};
 use crate::app_state::AppState;
+use crate::config::Config;
+use crate::services::{bot_service, wazzup_api};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -39,17 +38,12 @@ async fn main() -> std::io::Result<()> {
             channels::delete_channel,
             channels::generate_wrapped_iframe_link,
             channels::handle_channel_added,
+            channels::reinitialize_channel,
             // Chats
-            chats::get_chats,
-            chats::get_chat_details,
+            chats::get_chat_previews,
+            chats::get_chat,
             chats::get_chat_messages,
-            // Messages
-            messages::send_message,
-            messages::get_messages,
-            messages::get_unread_count,
-            // Timezone
-            timezone::get_current_timezone,
-            timezone::get_current_time,
+            chats::send_chat_message,
             // Contacts
             contacts::get_contacts,
             contacts::get_contact_by_id,
@@ -66,17 +60,25 @@ async fn main() -> std::io::Result<()> {
                 contacts::ContactWithWazzupData,
                 channels::WrappedIframeLinkResponse,
                 channels::ChannelAddedNotification,
+                channels::ChannelsResponse,
+                channels::ChannelView,
                 webhooks::ConnectWebhooksResponse,
-                
-                // --- Chats API Structs ---
-                chats::ChatResponse,
-                chats::MessageInfo,
-                chats::ChatListResponse,
-                chats::ChatDetailsResponse,
-                chats::ClientInfo,
-                chats::ResponsibleUserInfo,
-                
-                // --- Wazzup API Structs ---
+
+                // --- Chats API Schemas ---
+                chats::ChatPreview,
+                chats::ChatPreviewList,
+                chats::ChatDetails,
+                chats::ChatMessagesResponse,
+                chats::ChatPreviewsQuery,
+                chats::MessagesQuery,
+                chats::MessageView,
+                chats::MessageSender,
+                chats::MessageContentItem,
+                chats::OutgoingMessage,
+                chats::SendChatMessageRequest,
+                chats::SendChatMessageResponse,
+
+                // --- Wazzup API Schemas ---
                 wazzup_api::ChannelListResponse,
                 wazzup_api::ChannelInfo,
                 wazzup_api::GenerateIframeLinkRequest,
@@ -91,12 +93,8 @@ async fn main() -> std::io::Result<()> {
             )
         ),
         tags(
-            (name = "Companies", description = "Company management endpoints"),
             (name = "Channels", description = "Channel management endpoints"),
-            (name = "Chats", description = "Chat management endpoints (local data only)"),
-            (name = "Messages", description = "Message sending and retrieval endpoints"),
-            (name = "Users", description = "User management endpoints"),
-            (name = "Timezone", description = "Timezone conversion and utility endpoints"),
+            (name = "Chats", description = "Chat management endpoints"),
             (name = "Contacts", description = "Contact management endpoints (synced with Wazzup)"),
             (name = "Webhooks", description = "Endpoints for receiving Wazzup webhooks"),
         )
@@ -107,7 +105,11 @@ async fn main() -> std::io::Result<()> {
     let port = config.port;
 
     log::info!("Starting server at http://{}:{}", host, port);
-    log::info!("Swagger UI available at http://{}:{}/swagger-ui/", host, port);
+    log::info!(
+        "Swagger UI available at http://{}:{}/swagger-ui/",
+        host,
+        port
+    );
 
     HttpServer::new(move || {
         App::new()
@@ -118,34 +120,33 @@ async fn main() -> std::io::Result<()> {
                 bot_service: bot_service::BotService::new(),
             }))
             // Глобальный лимит размера тела (1MB)
-            .app_data(actix_web::web::PayloadConfig::new(config.effective_max_body_bytes()))
+            .app_data(actix_web::web::PayloadConfig::new(
+                config.effective_max_body_bytes(),
+            ))
             .wrap(api::middleware::RequestId)
             .wrap(
                 Cors::default()
                     .allow_any_origin()
                     .allow_any_method()
                     .allow_any_header()
-                    .max_age(3600)
+                    .max_age(3600),
             )
             .service(
                 fs::Files::new("/static", "./static")
                     .show_files_listing()
-                    .use_last_modified(true)
+                    .use_last_modified(true),
             )
             .service(
                 web::scope("/api")
                     .wrap(middleware::NormalizePath::trim())
                     .configure(channels::init_routes)
                     .configure(chats::init_routes)
-                    .configure(messages::init_routes)
                     .configure(contacts::init_routes)
-                    .configure(webhooks::init_routes)
-                    .configure(clients::init_routes)
+                    .configure(webhooks::init_routes),
             )
+            .service(web::redirect("/swagger", "/swagger/"))
             .service(
-                web::redirect("/swagger", "/swagger/"))
-                .service(SwaggerUi::new("/swagger/{_:.*}")
-                    .url("/api-docs/openapi.json", ApiDoc::openapi()),
+                SwaggerUi::new("/swagger/{_:.*}").url("/api-docs/openapi.json", ApiDoc::openapi()),
             )
     })
     .bind((host, port))?

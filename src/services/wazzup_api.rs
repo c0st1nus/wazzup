@@ -1,6 +1,6 @@
 use crate::errors::AppError;
 use reqwest::{Client, Method};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use utoipa::ToSchema;
 
@@ -14,7 +14,15 @@ pub struct WazzupApiService {
 
 // Generic request helpers
 impl WazzupApiService {
-    pub fn new() -> Self { Self { client: Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap(), base_url: WAZZUP_API_BASE_URL.to_string() } }
+    pub fn new() -> Self {
+        Self {
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .unwrap(),
+            base_url: WAZZUP_API_BASE_URL.to_string(),
+        }
+    }
 
     async fn request<T: Serialize, R: DeserializeOwned>(
         &self,
@@ -24,10 +32,14 @@ impl WazzupApiService {
         body: Option<&T>,
     ) -> Result<R, AppError> {
         let url = format!("{}{}", self.base_url, path);
-        let mut request_builder = self.client.request(method.clone(), &url).bearer_auth(api_key);
+        let mut request_builder = self
+            .client
+            .request(method.clone(), &url)
+            .bearer_auth(api_key);
 
         if let Some(body_data) = body {
-            let body_json = serde_json::to_string(body_data).unwrap_or_else(|_| "Failed to serialize body".to_string());
+            let body_json = serde_json::to_string(body_data)
+                .unwrap_or_else(|_| "Failed to serialize body".to_string());
             log::info!("Sending {} request to {}: {}", method, url, body_json);
             request_builder = request_builder.json(body_data);
         } else {
@@ -45,9 +57,17 @@ impl WazzupApiService {
         // Проверяем статус и собираем детальную информацию об ошибке
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error reading response body".to_string());
-            log::error!("Wazzup API Error on path {}: {} - {}", path, status, error_text);
-            
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error reading response body".to_string());
+            log::error!(
+                "Wazzup API Error on path {}: {} - {}",
+                path,
+                status,
+                error_text
+            );
+
             return Err(AppError::InvalidInput(format!(
                 "API request to {} failed with status {}: {}",
                 path, status, error_text
@@ -73,9 +93,14 @@ impl WazzupApiService {
     ) -> Result<String, AppError> {
         let url = format!("https://api.wazzup24.com{}", path);
         log::info!("Making webhook PATCH request to: {}", url);
-        log::info!("Request body: {:?}", serde_json::to_string(body).unwrap_or_default());
-        
-        let response = self.client.patch(&url)
+        log::info!(
+            "Request body: {:?}",
+            serde_json::to_string(body).unwrap_or_default()
+        );
+
+        let response = self
+            .client
+            .patch(&url)
             .bearer_auth(api_key)
             .json(body)
             .send()
@@ -83,18 +108,28 @@ impl WazzupApiService {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error reading response body".to_string());
-             log::error!("Wazzup API Error on webhook patch: {} - {}", status, error_text);
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error reading response body".to_string());
+            log::error!(
+                "Wazzup API Error on webhook patch: {} - {}",
+                status,
+                error_text
+            );
             return Err(AppError::InvalidInput(format!(
                 "API request failed with status {}: {}",
                 status, error_text
             )));
         }
 
-        log::info!("Webhook PATCH request successful, status: {}", response.status());
+        log::info!(
+            "Webhook PATCH request successful, status: {}",
+            response.status()
+        );
         let response_text = response.text().await?;
         log::info!("Webhook PATCH response body: {}", response_text);
-        
+
         Ok(response_text)
     }
 
@@ -115,7 +150,10 @@ impl WazzupApiService {
 
         log::info!("Making contacts API request to: {}", url);
         if let Some(body_data) = body {
-            log::info!("Request body: {:?}", serde_json::to_string(body_data).unwrap_or_default());
+            log::info!(
+                "Request body: {:?}",
+                serde_json::to_string(body_data).unwrap_or_default()
+            );
         }
 
         let response = request_builder.send().await?;
@@ -123,20 +161,31 @@ impl WazzupApiService {
         // Проверяем статус, потом обрабатываем тело.
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error reading response body".to_string());
-            log::error!("Wazzup Contacts API Error on path {}: {} - {}", path, status, error_text);
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error reading response body".to_string());
+            log::error!(
+                "Wazzup Contacts API Error on path {}: {} - {}",
+                path,
+                status,
+                error_text
+            );
             return Err(AppError::InvalidInput(format!(
                 "Contacts API request failed with status {}: {}",
                 status, error_text
             )));
         }
 
-        log::info!("Contacts API request successful, status: {}", response.status());
-        
+        log::info!(
+            "Contacts API request successful, status: {}",
+            response.status()
+        );
+
         // Получаем текст ответа для логирования
         let response_text = response.text().await?;
         log::info!("Contacts API response body: {}", response_text);
-        
+
         // Пробуем парсить JSON из текста
         match serde_json::from_str::<R>(&response_text) {
             Ok(result) => Ok(result),
@@ -160,10 +209,14 @@ impl WazzupApiService {
         body: Option<&T>,
     ) -> Result<R, AppError> {
         let url = format!("https://tech.wazzup24.com{}", path);
-        let mut request_builder = self.client.request(method.clone(), &url).bearer_auth(api_key);
+        let mut request_builder = self
+            .client
+            .request(method.clone(), &url)
+            .bearer_auth(api_key);
 
         if let Some(body_data) = body {
-            let body_json = serde_json::to_string(body_data).unwrap_or_else(|_| "Failed to serialize body".to_string());
+            let body_json = serde_json::to_string(body_data)
+                .unwrap_or_else(|_| "Failed to serialize body".to_string());
             log::info!("Sending {} request to {}: {}", method, url, body_json);
             request_builder = request_builder.json(body_data);
         } else {
@@ -181,21 +234,32 @@ impl WazzupApiService {
         // Проверяем статус и собираем детальную информацию об ошибке
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error reading response body".to_string());
-            log::error!("Wazzup Channels API Error on path {}: {} - {}", path, status, error_text);
-            
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error reading response body".to_string());
+            log::error!(
+                "Wazzup Channels API Error on path {}: {} - {}",
+                path,
+                status,
+                error_text
+            );
+
             return Err(AppError::InvalidInput(format!(
                 "Channels API request failed with status {}: {}",
                 status, error_text
             )));
         }
 
-        log::info!("Channels API request successful, status: {}", response.status());
-        
+        log::info!(
+            "Channels API request successful, status: {}",
+            response.status()
+        );
+
         // Получаем текст ответа для логирования
         let response_text = response.text().await?;
         log::info!("Channels API response body: {}", response_text);
-        
+
         // Пробуем парсить JSON из текста
         match serde_json::from_str::<R>(&response_text) {
             Ok(result) => Ok(result),
@@ -218,31 +282,59 @@ impl WazzupApiService {
         api_key: &str,
         request: &GenerateIframeLinkRequest,
     ) -> Result<GenerateIframeLinkResponse, AppError> {
-        self.request_channels_api(api_key, Method::POST, "/iframe/generate-channels-link", Some(request)).await
+        self.request_channels_api(
+            api_key,
+            Method::POST,
+            "/iframe/generate-channels-link",
+            Some(request),
+        )
+        .await
     }
 
     pub async fn get_channels(&self, api_key: &str) -> Result<ChannelListResponse, AppError> {
-        self.request_channels_api(api_key, Method::GET, "/channels/list", None::<&()>).await
+        self.request_channels_api(api_key, Method::GET, "/channels/list", None::<&()>)
+            .await
     }
-    
-    pub async fn reinitialize_channel(&self, api_key: &str, transport: &str, channel_id: &str) -> Result<(), AppError> {
+
+    pub async fn reinitialize_channel(
+        &self,
+        api_key: &str,
+        transport: &str,
+        channel_id: &str,
+    ) -> Result<(), AppError> {
         let path = format!("/channels/{}/{}/reinit", transport, channel_id);
-        let _: Value = self.request_channels_api(api_key, Method::POST, &path, None::<&()>).await?;
+        let _: Value = self
+            .request_channels_api(api_key, Method::POST, &path, None::<&()>)
+            .await?;
         Ok(())
     }
 
-    pub async fn delete_channel(&self, api_key: &str, transport: &str, channel_id: &str, delete_chats: bool) -> Result<(), AppError> {
+    pub async fn delete_channel(
+        &self,
+        api_key: &str,
+        transport: &str,
+        channel_id: &str,
+        delete_chats: bool,
+    ) -> Result<(), AppError> {
         let path = format!("/channels/{}/{}", transport, channel_id);
         let body = serde_json::json!({ "deleteChats": delete_chats });
-        log::info!("Deleting channel: transport={}, channel_id={}, deleteChats={}", transport, channel_id, delete_chats);
-        let _: Value = self.request_channels_api(api_key, Method::DELETE, &path, Some(&body)).await?;
+        log::info!(
+            "Deleting channel: transport={}, channel_id={}, deleteChats={}",
+            transport,
+            channel_id,
+            delete_chats
+        );
+        let _: Value = self
+            .request_channels_api(api_key, Method::DELETE, &path, Some(&body))
+            .await?;
         Ok(())
     }
 
     // --- Users/Settings ---
-    
+
     pub async fn get_user_settings(&self, api_key: &str) -> Result<UserSettings, AppError> {
-        self.request(api_key, Method::GET, "/settings", None::<&()>).await
+        self.request(api_key, Method::GET, "/settings", None::<&()>)
+            .await
     }
 
     pub async fn update_user_settings(
@@ -250,32 +342,41 @@ impl WazzupApiService {
         api_key: &str,
         request: &UpdateUserSettingsRequest,
     ) -> Result<(), AppError> {
-        let _: Value = self.request(api_key, Method::PATCH, "/settings", Some(request)).await?;
+        let _: Value = self
+            .request(api_key, Method::PATCH, "/settings", Some(request))
+            .await?;
         Ok(())
     }
 
     // --- Contacts ---
-    
+
     pub async fn get_contacts(&self, api_key: &str) -> Result<WazzupContactListResponse, AppError> {
         // Default offset to 0 if not provided
         self.get_contacts_with_offset(api_key, 0).await
     }
-    
-    pub async fn get_contacts_with_offset(&self, api_key: &str, offset: i32) -> Result<WazzupContactListResponse, AppError> {
+
+    pub async fn get_contacts_with_offset(
+        &self,
+        api_key: &str,
+        offset: i32,
+    ) -> Result<WazzupContactListResponse, AppError> {
         let path = format!("/v3/contacts?offset={}", offset);
-        self.request_contacts_api(api_key, Method::GET, &path, None::<&()>).await
+        self.request_contacts_api(api_key, Method::GET, &path, None::<&()>)
+            .await
     }
-    
+
     pub async fn create_contacts(
         &self,
         api_key: &str,
         contacts: Vec<WazzupContact>,
     ) -> Result<(), AppError> {
         // API Wazzup принимает массив контактов напрямую, не в обертке
-        let _: Value = self.request_contacts_api(api_key, Method::POST, "/v3/contacts", Some(&contacts)).await?;
+        let _: Value = self
+            .request_contacts_api(api_key, Method::POST, "/v3/contacts", Some(&contacts))
+            .await?;
         Ok(())
     }
-    
+
     pub async fn create_contact(
         &self,
         api_key: &str,
@@ -283,17 +384,24 @@ impl WazzupApiService {
     ) -> Result<WazzupContact, AppError> {
         // Create a single contact by wrapping it in a vector
         let contacts = vec![contact.clone()];
-        let _: Value = self.request_contacts_api(api_key, Method::POST, "/v3/contacts", Some(&contacts)).await?;
+        let _: Value = self
+            .request_contacts_api(api_key, Method::POST, "/v3/contacts", Some(&contacts))
+            .await?;
         // Return the contact that was passed in (API doesn't return the created contact)
         Ok(contact.clone())
     }
-    
+
     #[allow(dead_code)]
-    pub async fn get_contact(&self, api_key: &str, contact_id: &str) -> Result<WazzupContact, AppError> {
+    pub async fn get_contact(
+        &self,
+        api_key: &str,
+        contact_id: &str,
+    ) -> Result<WazzupContact, AppError> {
         let path = format!("/v3/contacts/{}", contact_id);
-        self.request_contacts_api(api_key, Method::GET, &path, None::<&()>).await
+        self.request_contacts_api(api_key, Method::GET, &path, None::<&()>)
+            .await
     }
-    
+
     pub async fn update_contact(
         &self,
         api_key: &str,
@@ -301,35 +409,50 @@ impl WazzupApiService {
         contact: &WazzupContact,
     ) -> Result<WazzupContact, AppError> {
         let path = format!("/v3/contacts/{}", contact_id);
-        let _: Value = self.request_contacts_api(api_key, Method::PUT, &path, Some(contact)).await?;
+        let _: Value = self
+            .request_contacts_api(api_key, Method::PUT, &path, Some(contact))
+            .await?;
         // Return the contact that was passed in (API doesn't return the updated contact)
         Ok(contact.clone())
     }
-    
+
     pub async fn delete_contact(&self, api_key: &str, contact_id: &str) -> Result<(), AppError> {
         let path = format!("/v3/contacts/{}", contact_id);
-        let _: Value = self.request_contacts_api(api_key, Method::DELETE, &path, None::<&()>).await?;
+        let _: Value = self
+            .request_contacts_api(api_key, Method::DELETE, &path, None::<&()>)
+            .await?;
         Ok(())
     }
-    
+
     // --- Messages ---
-    
+
     pub async fn send_message(
         &self,
         api_key: &str,
         request: &SendMessageRequest,
     ) -> Result<SendMessageResponse, AppError> {
-        self.request(api_key, Method::POST, "/v3/message", Some(request)).await
+        self.request(api_key, Method::POST, "/v3/message", Some(request))
+            .await
     }
 
-    pub async fn get_messages(&self, api_key: &str, chat_id: &str) -> Result<MessageListResponse, AppError> {
+    pub async fn get_messages(
+        &self,
+        api_key: &str,
+        chat_id: &str,
+    ) -> Result<MessageListResponse, AppError> {
         let path = format!("/messages?chatId={}", chat_id);
         self.request(api_key, Method::GET, &path, None::<&()>).await
     }
-    
+
     pub async fn get_unread_count(&self, api_key: &str) -> Result<UnreadCountResponse, AppError> {
         // For now, use a placeholder endpoint - this needs to be updated to match actual Wazzup API
-        self.request(api_key, Method::GET, "/v3/unanswered/placeholder", None::<&()>).await
+        self.request(
+            api_key,
+            Method::GET,
+            "/v3/unanswered/placeholder",
+            None::<&()>,
+        )
+        .await
     }
 
     // --- Webhooks ---
@@ -339,10 +462,10 @@ impl WazzupApiService {
         api_key: &str,
         request: &WebhookSubscriptionRequest,
     ) -> Result<String, AppError> {
-        self.request_patch_webhooks_string(api_key, "/v3/webhooks", request).await
+        self.request_patch_webhooks_string(api_key, "/v3/webhooks", request)
+            .await
     }
 }
-
 
 // --- Request & Response Structs ---
 
@@ -422,8 +545,8 @@ pub struct UpdateUserSettingsRequest {
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WazzupContactData {
-    pub chat_type: String,  // whatsapp, telegram, etc.
-    pub chat_id: String,    // ID чата в мессенджере
+    pub chat_type: String,        // whatsapp, telegram, etc.
+    pub chat_id: String,          // ID чата в мессенджере
     pub username: Option<String>, // для Telegram
     pub phone: Option<String>,    // для Telegram
 }
@@ -432,7 +555,7 @@ pub struct WazzupContactData {
 #[serde(rename_all = "camelCase")]
 pub struct WazzupContact {
     pub id: String,                           // ID контакта в CRM
-    pub responsible_user_id: String,          // ID ответственного пользователя  
+    pub responsible_user_id: String,          // ID ответственного пользователя
     pub name: String,                         // Имя контакта
     pub contact_data: Vec<WazzupContactData>, // Массив контактных данных
     pub uri: Option<String>,                  // Ссылка на контакт в CRM
@@ -485,14 +608,14 @@ pub struct SendMessageResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
-     pub id: Option<String>,
-     pub chat_id: Option<String>,
-     pub channel_id: Option<String>,
-     pub text: Option<String>,
-     pub content_type: Option<String>,
-     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-     pub direction: Option<String>,
-     pub is_inbound: Option<bool>,
+    pub id: Option<String>,
+    pub chat_id: Option<String>,
+    pub channel_id: Option<String>,
+    pub text: Option<String>,
+    pub content_type: Option<String>,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub direction: Option<String>,
+    pub is_inbound: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -506,7 +629,6 @@ pub struct MessageListResponse {
 pub struct UnreadCountResponse {
     pub counter: i32,
 }
-
 
 // Webhooks
 #[derive(Debug, Serialize, Deserialize)]

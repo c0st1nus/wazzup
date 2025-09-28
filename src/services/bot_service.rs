@@ -1,8 +1,8 @@
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use crate::database::client::users;
 use crate::errors::AppError;
+use reqwest::Client;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 pub struct BotHookRequest {
@@ -51,18 +51,20 @@ impl BotService {
             )));
         }
 
-        let bot_response: BotHookResponse = response
-            .json()
-            .await
-            .map_err(|e| AppError::ExternalApiError(format!("Failed to parse bot response: {}", e)))?;
+        let bot_response: BotHookResponse = response.json().await.map_err(|e| {
+            AppError::ExternalApiError(format!("Failed to parse bot response: {}", e))
+        })?;
 
         Ok(bot_response)
     }
 
     /// Выбирает случайного менеджера для перенаправления клиента
-    pub async fn select_random_manager(&self, db: &DatabaseConnection) -> Result<users::Model, AppError> {
+    pub async fn select_random_manager(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<users::Model, AppError> {
         use sea_orm::QueryOrder;
-        
+
         // Получаем всех активных менеджеров (исключая ботов и quality_control)
         let managers = users::Entity::find()
             .filter(users::Column::Role.eq("manager"))

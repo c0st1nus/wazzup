@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use chrono_tz::Tz;
+use serde::Deserialize;
 use std::env;
 use std::str::FromStr;
 
@@ -18,52 +18,67 @@ impl Config {
         let cfg = config::Config::builder()
             .add_source(config::Environment::default())
             .build()?;
-        
+
         let mut config: Config = cfg.try_deserialize()?;
-        
+
         // Устанавливаем значение по умолчанию для timezone если не указано
         if config.timezone.is_none() {
             config.timezone = Some("UTC".to_string());
         }
-        
+
         // Валидация конфигурации
         config.validate()?;
-        
+
         Ok(config)
     }
-    
+
     /// Получает временную зону из конфигурации
     pub fn get_timezone(&self) -> Result<Tz, chrono_tz::ParseError> {
         let tz_str = self.timezone.as_deref().unwrap_or("UTC");
         tz_str.parse::<Tz>()
     }
-    
+
     /// Валидирует конфигурацию на наличие потенциальных проблем безопасности
     fn validate(&self) -> Result<(), config::ConfigError> {
         // Проверяем, что host не содержит подозрительных символов
-        if !self.host.chars().all(|c| c.is_alphanumeric() || ".:-_".contains(c)) {
-            return Err(config::ConfigError::Message("Invalid host format".to_string()));
+        if !self
+            .host
+            .chars()
+            .all(|c| c.is_alphanumeric() || ".:-_".contains(c))
+        {
+            return Err(config::ConfigError::Message(
+                "Invalid host format".to_string(),
+            ));
         }
-        
+
         // Проверяем разумные ограничения для порта (u16 максимум 65535)
         if self.port < 1024 {
-            return Err(config::ConfigError::Message("Port must be 1024 or higher for security reasons".to_string()));
+            return Err(config::ConfigError::Message(
+                "Port must be 1024 or higher for security reasons".to_string(),
+            ));
         }
-        
+
         // Проверяем, что шаблон URL базы данных содержит необходимый плейсхолдер
         if !self.client_database_url_template.contains("{db_name}") {
-            return Err(config::ConfigError::Message("Database URL template must contain {db_name} placeholder".to_string()));
+            return Err(config::ConfigError::Message(
+                "Database URL template must contain {db_name} placeholder".to_string(),
+            ));
         }
-        
+
         // Проверяем, что URL не содержит очевидно небезопасных элементов path traversal
         if self.client_database_url_template.contains("..") {
-            return Err(config::ConfigError::Message("Database URL template contains potentially unsafe path traversal".to_string()));
+            return Err(config::ConfigError::Message(
+                "Database URL template contains potentially unsafe path traversal".to_string(),
+            ));
         }
-        
+
         // Валидируем временную зону
         if let Some(tz_str) = &self.timezone {
             if tz_str.parse::<Tz>().is_err() {
-                return Err(config::ConfigError::Message(format!("Invalid timezone: {}", tz_str)));
+                return Err(config::ConfigError::Message(format!(
+                    "Invalid timezone: {}",
+                    tz_str
+                )));
             }
         }
 
@@ -73,11 +88,12 @@ impl Config {
             let max = 500 * 1024 * 1024; // 500MB
             if limit < min || limit > max {
                 return Err(config::ConfigError::Message(format!(
-                    "max_body_bytes must be between {} and {} bytes", min, max
+                    "max_body_bytes must be between {} and {} bytes",
+                    min, max
                 )));
             }
         }
-        
+
         Ok(())
     }
 }

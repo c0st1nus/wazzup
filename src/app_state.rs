@@ -1,7 +1,7 @@
-use sea_orm::DatabaseConnection;
 use crate::config::Config;
-use crate::services::wazzup_api::WazzupApiService;
 use crate::services::bot_service::BotService;
+use crate::services::wazzup_api::WazzupApiService;
+use sea_orm::DatabaseConnection;
 
 #[derive(Clone)]
 pub struct AppState {

@@ -1,10 +1,6 @@
-use sea_orm::{DatabaseConnection, EntityTrait};
-use crate::{
-    database::main,
-    errors::AppError,
-    app_state::AppState,
-};
+use crate::{app_state::AppState, database::main, errors::AppError};
 use actix_web::web;
+use sea_orm::{DatabaseConnection, EntityTrait};
 
 /// Находит компанию и возвращает ее API ключ.
 pub async fn get_company_api_key(
@@ -37,6 +33,9 @@ pub async fn get_client_db_connection(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
     // Используем пул вместо прямого подключения каждый раз
-    let conn = app_state.client_db_pool.get_connection(&company.database_name).await?;
+    let conn = app_state
+        .client_db_pool
+        .get_connection(&company.database_name)
+        .await?;
     Ok(conn)
 }

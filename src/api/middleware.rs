@@ -1,6 +1,9 @@
+use actix_web::{
+    Error, HttpMessage,
+    dev::{Service, ServiceRequest, ServiceResponse, Transform},
+};
+use futures_util::future::{LocalBoxFuture, Ready, ready};
 use std::rc::Rc;
-use actix_web::{dev::{Service, ServiceRequest, ServiceResponse, Transform}, Error, HttpMessage};
-use futures_util::future::{ready, LocalBoxFuture, Ready};
 use uuid::Uuid;
 
 /// Middleware добавляющий trace/request id
@@ -18,11 +21,15 @@ where
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(RequestIdMiddleware { service: Rc::new(service) }))
+        ready(Ok(RequestIdMiddleware {
+            service: Rc::new(service),
+        }))
     }
 }
 
-pub struct RequestIdMiddleware<S> { service: Rc<S> }
+pub struct RequestIdMiddleware<S> {
+    service: Rc<S>,
+}
 
 impl<S, B> Service<ServiceRequest> for RequestIdMiddleware<S>
 where

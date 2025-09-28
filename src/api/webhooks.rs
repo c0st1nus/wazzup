@@ -1,16 +1,16 @@
-use actix_web::{get, post, web, HttpRequest, HttpResponse};
+use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use sea_orm::EntityTrait;
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::{
+    app_state::AppState,
     database::main,
     errors::AppError,
     services::{
-    wazzup_api::{WebhookSubscriptionRequest, WebhookSubscriptions},
+        wazzup_api::{WebhookSubscriptionRequest, WebhookSubscriptions},
         webhook_handler,
     },
-    app_state::AppState,
 };
 
 // --- DTOs (Data Transfer Objects) ---
@@ -43,23 +43,23 @@ async fn validate_webhook(
     path: web::Path<i64>,
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
-    
+
     // Базовая валидация company_id
     if company_id <= 0 {
         log::error!("Invalid company_id for validation: {}", company_id);
         return Err(AppError::InvalidInput("Invalid company ID".to_string()));
     }
-    
+
     log::info!("Webhook validation request for company {}", company_id);
-    
+
     // Проверяем, что компания существует
     let _company = main::companies::Entity::find_by_id(company_id)
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
-    
+
     // Возвращаем статус 200 для валидации webhook'а
-    Ok(HttpResponse::Ok().json(serde_json::json!({ 
+    Ok(HttpResponse::Ok().json(serde_json::json!({
         "status": "ok",
         "message": "Webhook endpoint is valid"
     })))
@@ -87,28 +87,32 @@ async fn handle_webhook(
     body: web::Json<webhook_handler::WebhookRequest>,
 ) -> Result<HttpResponse, AppError> {
     let company_id = path.into_inner();
-    
+
     // Базовая валидация company_id
     if company_id <= 0 {
         log::error!("Invalid company_id: {}", company_id);
         return Err(AppError::InvalidInput("Invalid company ID".to_string()));
     }
-    
+
     // Ограничиваем размер payload
     let json_string = serde_json::to_string(&body)?;
-    if json_string.len() > 1024 * 1024 {  // 1MB limit
+    if json_string.len() > 1024 * 1024 {
+        // 1MB limit
         log::error!("Webhook payload too large: {} bytes", json_string.len());
-        return Err(AppError::InvalidInput("Webhook payload too large".to_string()));
+        return Err(AppError::InvalidInput(
+            "Webhook payload too large".to_string(),
+        ));
     }
-    
+
     webhook_handler::handle_webhook(
-        company_id, 
-        body.into_inner(), 
-        &app_state.db, 
+        company_id,
+        body.into_inner(),
+        &app_state.db,
         &app_state.config,
         &app_state.bot_service,
         &app_state.wazzup_api,
-    ).await?;
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })))
 }
 
@@ -138,9 +142,11 @@ async fn connect_webhooks(
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Company {} not found", company_id)))?;
-    
+
     if company.wazzup_api_key.is_empty() {
-        return Err(AppError::InvalidInput("Company API key not set".to_string()));
+        return Err(AppError::InvalidInput(
+            "Company API key not set".to_string(),
+        ));
     }
 
     let webhooks_uri = if let Some(public_url) = &app_state.config.public_url {
@@ -150,7 +156,7 @@ async fn connect_webhooks(
         let scheme = req.connection_info().scheme().to_string();
         format!("{}://{}/api/webhook/{}", scheme, host, company_id)
     };
-    
+
     log::info!("Generated webhooks_uri: {}", webhooks_uri);
 
     let subscriptions = WebhookSubscriptions {
@@ -164,19 +170,25 @@ async fn connect_webhooks(
         webhooks_uri: webhooks_uri.clone(),
         subscriptions: subscriptions.clone(),
     };
-    
+
     log::info!("Sending webhook request: {:?}", request);
 
-    let response = app_state.wazzup_api.connect_webhooks(&company.wazzup_api_key, &request).await?;
+    let response = app_state
+        .wazzup_api
+        .connect_webhooks(&company.wazzup_api_key, &request)
+        .await?;
 
-    log::info!("Successfully connected webhooks for company {}, response: {}", company_id, response);
+    log::info!(
+        "Successfully connected webhooks for company {}, response: {}",
+        company_id,
+        response
+    );
     Ok(HttpResponse::Ok().json(ConnectWebhooksResponse {
         ok: true,
         webhooks_uri,
         subscriptions: request.subscriptions,
     }))
 }
-
 
 #[utoipa::path(
     post,
@@ -205,20 +217,20 @@ async fn test_webhook(
     };
 
     webhook_handler::handle_webhook(
-        company_id, 
-        test_webhook_request, 
-        &app_state.db, 
+        company_id,
+        test_webhook_request,
+        &app_state.db,
         &app_state.config,
         &app_state.bot_service,
         &app_state.wazzup_api,
-    ).await?;
+    )
+    .await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "status": "ok",
         "message": "Test webhook processed successfully"
     })))
 }
-
 
 // Функция для регистрации всех маршрутов этого модуля
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
@@ -227,6 +239,6 @@ pub fn init_routes(cfg: &mut web::ServiceConfig) {
             .service(connect_webhooks)
             .service(test_webhook)
             .service(validate_webhook)
-            .service(handle_webhook)
+            .service(handle_webhook),
     );
 }

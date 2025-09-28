@@ -1,20 +1,16 @@
-use actix_web::{delete, get, put, web, HttpResponse};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-};
+use actix_web::{HttpResponse, delete, get, put, web};
 use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
     api::helpers,
-    database::{
-        client,
-    },
+    api::validation,
+    app_state::AppState,
+    database::client,
     errors::AppError,
     services::wazzup_api::{self, WazzupContact, WazzupContactData},
-    app_state::AppState,
-    api::validation,
 };
 
 // --- DTOs (Data Transfer Objects) ---
@@ -57,11 +53,14 @@ fn local_client_to_wazzup_contact(
     responsible_user_id: &str,
 ) -> WazzupContact {
     let mut contact_data = Vec::new();
-    
+
     // Добавляем WhatsApp контакт если есть телефон
     if let Some(phone) = &client.phone {
         // Очищаем телефон от всех символов кроме цифр
-        let clean_phone = phone.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
+        let clean_phone = phone
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>();
         if !clean_phone.is_empty() {
             contact_data.push(WazzupContactData {
                 chat_type: "whatsapp".to_string(),
@@ -71,7 +70,7 @@ fn local_client_to_wazzup_contact(
             });
         }
     }
-    
+
     WazzupContact {
         id: client.id.to_string(),
         responsible_user_id: responsible_user_id.to_string(),
@@ -89,13 +88,19 @@ async fn sync_client_to_wazzup(
     wazzup_api: &wazzup_api::WazzupApiService,
 ) -> Result<(), AppError> {
     let wazzup_contact = local_client_to_wazzup_contact(client, responsible_user_id);
-    
+
     // Пробуем обновить контакт в Wazzup
-    match wazzup_api.update_contact(api_key, &client.id.to_string(), &wazzup_contact).await {
+    match wazzup_api
+        .update_contact(api_key, &client.id.to_string(), &wazzup_contact)
+        .await
+    {
         Ok(_) => Ok(()),
         Err(AppError::InvalidInput(msg)) if msg.contains("404") => {
             // Если контакт не найден в Wazzup, создаем его
-            log::info!("Contact {} not found in Wazzup, creating new one", client.id);
+            log::info!(
+                "Contact {} not found in Wazzup, creating new one",
+                client.id
+            );
             wazzup_api.create_contact(api_key, &wazzup_contact).await?;
             Ok(())
         }
@@ -129,7 +134,7 @@ async fn get_contacts(
 
     // Получаем клиентов из локальной БД
     let local_clients = client::clients::Entity::find().all(&client_db).await?;
-    
+
     // Получаем контакты из Wazzup
     let wazzup_response = wazzup_api.get_contacts(&api_key).await.unwrap_or_else(|e| {
         log::warn!("Failed to get contacts from Wazzup: {}", e);
@@ -138,14 +143,14 @@ async fn get_contacts(
             data: vec![],
         }
     });
-    
+
     // Создаем хэш-карту для быстрого поиска Wazzup контактов по ID
     let wazzup_contacts_map: std::collections::HashMap<String, WazzupContact> = wazzup_response
         .data
         .into_iter()
         .map(|contact| (contact.id.clone(), contact))
         .collect();
-    
+
     // Объединяем данные
     let contacts_with_wazzup: Vec<ContactWithWazzupData> = local_clients
         .into_iter()
@@ -194,13 +199,13 @@ async fn get_contact_by_id(
         .one(&client_db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Contact {} not found", contact_id)))?;
-    
+
     // Пробуем получить контакт из Wazzup
     let wazzup_contact = wazzup_api
         .get_contact(&api_key, &contact_id.to_string())
         .await
         .ok();
-    
+
     let contact_with_wazzup = ContactWithWazzupData {
         id: local_client.id,
         full_name: local_client.full_name,
@@ -263,15 +268,24 @@ async fn update_contact(
 
     // Обновляем клиента в локальной БД
     let mut active_client: client::clients::ActiveModel = existing_client.clone().into();
-    if !validation::ensure_max_len(&update_data.full_name, 200) { return Err(AppError::InvalidInput("Full name too long".into())); }
-    if !validation::validate_email_opt(&update_data.email) { return Err(AppError::InvalidInput("Invalid email format".into())); }
+    if !validation::ensure_max_len(&update_data.full_name, 200) {
+        return Err(AppError::InvalidInput("Full name too long".into()));
+    }
+    if !validation::validate_email_opt(&update_data.email) {
+        return Err(AppError::InvalidInput("Invalid email format".into()));
+    }
     let sanitized_phone = match update_data.phone {
-        Some(ref p) => validation::sanitize_phone(p).ok_or_else(|| AppError::InvalidInput("Invalid phone".into()))?,
+        Some(ref p) => validation::sanitize_phone(p)
+            .ok_or_else(|| AppError::InvalidInput("Invalid phone".into()))?,
         None => String::new(),
     };
     active_client.full_name = Set(update_data.full_name);
     active_client.email = Set(update_data.email);
-    active_client.phone = if sanitized_phone.is_empty() { Set(None) } else { Set(Some(sanitized_phone)) };
+    active_client.phone = if sanitized_phone.is_empty() {
+        Set(None)
+    } else {
+        Set(Some(sanitized_phone))
+    };
     active_client.wazzup_chat = Set(update_data.wazzup_chat);
 
     let updated_client = active_client.update(&client_db).await?;
@@ -330,7 +344,10 @@ async fn delete_contact(
         .ok_or_else(|| AppError::NotFound(format!("Contact {} not found", contact_id)))?;
 
     // Сначала удаляем из Wazzup
-    if let Err(e) = wazzup_api.delete_contact(&api_key, &contact_id.to_string()).await {
+    if let Err(e) = wazzup_api
+        .delete_contact(&api_key, &contact_id.to_string())
+        .await
+    {
         log::warn!("Failed to delete contact {} from Wazzup: {}", contact_id, e);
         // Продолжаем удаление из локальной БД даже если не удалось удалить из Wazzup
     }

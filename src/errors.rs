@@ -1,4 +1,4 @@
-use actix_web::{http::StatusCode, HttpResponse, ResponseError};
+use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use sea_orm::DbErr;
 use serde::Serialize;
 use thiserror::Error;

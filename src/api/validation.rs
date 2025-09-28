@@ -8,9 +8,20 @@ lazy_static::lazy_static! {
     static ref PHONE_RE: Regex = Regex::new(r"^[0-9+]{6,20}$").unwrap();
 }
 
-pub fn validate_email_opt(email: &str) -> bool { EMAIL_RE.is_match(email) }
-pub fn sanitize_phone(phone: &str) -> Option<String> {
-    let digits: String = phone.chars().filter(|c| c.is_ascii_digit() || *c == '+').collect();
-    if PHONE_RE.is_match(&digits) { Some(digits) } else { None }
+pub fn validate_email_opt(email: &str) -> bool {
+    EMAIL_RE.is_match(email)
 }
-pub fn ensure_max_len(value: &str, max: usize) -> bool { value.len() <= max }
+pub fn sanitize_phone(phone: &str) -> Option<String> {
+    let digits: String = phone
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '+')
+        .collect();
+    if PHONE_RE.is_match(&digits) {
+        Some(digits)
+    } else {
+        None
+    }
+}
+pub fn ensure_max_len(value: &str, max: usize) -> bool {
+    value.len() <= max
+}
