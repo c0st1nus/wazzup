@@ -1,7 +1,7 @@
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
 use sea_orm::DbErr;
-use thiserror::Error;
 use serde::Serialize;
+use thiserror::Error;
 
 /// Унифицированная структура ответа об ошибке
 #[derive(Serialize)]
@@ -34,6 +34,9 @@ pub enum AppError {
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+
     #[error("External API error: {0}")]
     ExternalApiError(String),
 
@@ -44,12 +47,15 @@ pub enum AppError {
 impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
         match self {
-            AppError::DbError(_) | AppError::ReqwestError(_) | AppError::JsonError(_) | AppError::Internal | AppError::ExternalApiError(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            AppError::DbError(_)
+            | AppError::ReqwestError(_)
+            | AppError::JsonError(_)
+            | AppError::Internal
+            | AppError::ExternalApiError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::InvalidInput(_) => StatusCode::BAD_REQUEST,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
+            AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
         }
     }
 
@@ -57,7 +63,12 @@ impl ResponseError for AppError {
         let code = self.code();
         let message = self.to_string();
         // trace_id можно внедрить позже через middleware (корреляция)
-        let body = ErrorResponse { code, message, details: None, trace_id: None };
+        let body = ErrorResponse {
+            code,
+            message,
+            details: None,
+            trace_id: None,
+        };
         HttpResponse::build(self.status_code()).json(body)
     }
 }
@@ -71,6 +82,7 @@ impl AppError {
             AppError::NotFound(_) => "NOT_FOUND",
             AppError::InvalidInput(_) => "INVALID_INPUT",
             AppError::Forbidden(_) => "FORBIDDEN",
+            AppError::Unauthorized(_) => "UNAUTHORIZED",
             AppError::ExternalApiError(_) => "EXTERNAL_API_ERROR",
             AppError::Internal => "INTERNAL",
         }

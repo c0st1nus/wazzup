@@ -1,13 +1,8 @@
-pub mod admin;
 pub mod channels;
 pub mod chats;
-pub mod clients;
-pub mod companies;
 pub mod contacts;
 pub mod helpers;
 pub mod messages;
-pub mod timezone;
-pub mod users;
 pub mod webhooks;
 pub mod middleware;
 pub mod validation;

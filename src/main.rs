@@ -15,8 +15,8 @@ mod services;
 mod app_state; // ensure app_state visible to crate::* imports
 
 use crate::config::Config;
-use crate::api::{admin, channels, chats, companies, messages, timezone, users, webhooks, contacts, clients};
-use crate::database::{client, main, pool_manager::ClientDbPoolManager};
+use crate::api::{channels, chats, companies, messages, timezone, users, webhooks, contacts, clients};
+use crate::database::models;
 use crate::services::{wazzup_api, bot_service};
 use crate::app_state::AppState;
 
@@ -31,18 +31,9 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to connect to database");
 
-    // Создаем pool manager для клиентских баз данных
-    let client_db_pool = ClientDbPoolManager::new(config.clone());
-
     #[derive(OpenApi)]
     #[openapi(
         paths(
-            // Companies
-            companies::get_companies,
-            companies::get_company_by_id,
-            companies::create_company,
-            companies::update_company,
-            companies::delete_company,
             // Channels
             channels::get_channels,
             channels::delete_channel,
@@ -56,11 +47,6 @@ async fn main() -> std::io::Result<()> {
             messages::send_message,
             messages::get_messages,
             messages::get_unread_count,
-            // Users
-            users::get_users,
-            users::create_user,
-            users::get_settings,
-            users::update_settings,
             // Timezone
             timezone::get_current_timezone,
             timezone::get_current_time,
@@ -73,19 +59,9 @@ async fn main() -> std::io::Result<()> {
             webhooks::handle_webhook,
             webhooks::connect_webhooks,
             webhooks::test_webhook,
-            // Admin
-            admin::get_db_pool_stats,
         ),
         components(
             schemas(
-                // --- Models ---
-                main::companies::Model, // Company
-                client::users::Model, // User
-
-                // --- DTOs & API Structs ---
-                companies::CreateCompanyDto,
-                companies::UpdateCompanyDto,
-                users::CreateUserDto,
                 contacts::UpdateContactDto,
                 contacts::ContactWithWazzupData,
                 channels::WrappedIframeLinkResponse,
@@ -99,12 +75,6 @@ async fn main() -> std::io::Result<()> {
                 chats::ChatDetailsResponse,
                 chats::ClientInfo,
                 chats::ResponsibleUserInfo,
-                
-                // --- Admin API Structs ---
-                admin::DatabasePoolStats,
-                
-                // --- Timezone API Structs ---
-                timezone::TimezoneInfo,
                 
                 // --- Wazzup API Structs ---
                 wazzup_api::ChannelListResponse,
@@ -129,7 +99,6 @@ async fn main() -> std::io::Result<()> {
             (name = "Timezone", description = "Timezone conversion and utility endpoints"),
             (name = "Contacts", description = "Contact management endpoints (synced with Wazzup)"),
             (name = "Webhooks", description = "Endpoints for receiving Wazzup webhooks"),
-            (name = "Admin", description = "Administrative endpoints for system monitoring")
         )
     )]
     struct ApiDoc;
@@ -145,7 +114,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(AppState {
                 db: db.clone(),
                 config: config.clone(),
-                client_db_pool: client_db_pool.clone(),
                 wazzup_api: wazzup_api::WazzupApiService::new(),
                 bot_service: bot_service::BotService::new(),
             }))
@@ -167,15 +135,11 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api")
                     .wrap(middleware::NormalizePath::trim())
-                    .configure(companies::init_routes)
                     .configure(channels::init_routes)
                     .configure(chats::init_routes)
                     .configure(messages::init_routes)
-                    .configure(timezone::init_routes)
-                    .configure(users::init_routes)
                     .configure(contacts::init_routes)
                     .configure(webhooks::init_routes)
-                    .configure(admin::init_routes)
                     .configure(clients::init_routes)
             )
             .service(

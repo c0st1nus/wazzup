@@ -1,5 +1,7 @@
 use serde::Deserialize;
 use chrono_tz::Tz;
+use std::env;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -84,4 +86,36 @@ impl Config {
     pub fn effective_max_body_bytes(&self) -> usize {
         self.max_body_bytes.unwrap_or(100 * 1024 * 1024)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct DatabaseSettings {
+    pub url: String,
+    pub max_connections: Option<u32>,
+    pub min_connections: Option<u32>,
+    pub connect_timeout_secs: Option<u64>,
+    pub acquire_timeout_secs: Option<u64>,
+    pub idle_timeout_secs: Option<u64>,
+    pub sql_log: Option<bool>,
+}
+
+impl DatabaseSettings {
+    pub fn default_from_url(url: String) -> Self {
+        Self {
+            url,
+            max_connections: parse_env_var("DATABASE_MAX_CONNECTIONS"),
+            min_connections: parse_env_var("DATABASE_MIN_CONNECTIONS"),
+            connect_timeout_secs: parse_env_var("DATABASE_CONNECT_TIMEOUT_SECS"),
+            acquire_timeout_secs: parse_env_var("DATABASE_ACQUIRE_TIMEOUT_SECS"),
+            idle_timeout_secs: parse_env_var("DATABASE_IDLE_TIMEOUT_SECS"),
+            sql_log: parse_env_var("DATABASE_SQL_LOG"),
+        }
+    }
+}
+
+fn parse_env_var<T>(key: &str) -> Option<T>
+where
+    T: FromStr,
+{
+    env::var(key).ok().and_then(|value| value.parse::<T>().ok())
 }

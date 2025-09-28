@@ -3,26 +3,18 @@ name = "wazzup"
 version = "0.1.0"
 edition = "2024"
 
-[[bin]]
-name = "main"
-path = "src/main.rs"
-
-[[bin]]
-name = "admin-cli"
-path = "src/admin_cli/main.rs"
-
 [dependencies]
 actix-web = "4.11.0"
-actix-files = "0.6.6"
+actix-files = "0.6.8"
 actix-cors = "0.7.0"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
 dotenvy = "0.15.0"
-config = "0.15.15"
+config = "0.15.17"
 sea-orm = { version = "1.1.14", features = [ "sqlx-postgres", "sqlx-mysql", "runtime-actix-rustls", "macros", "with-json" ] }
 reqwest = { version = "0.12.23", features = ["json"] }
 fastrand = "2.2.0"
-chrono = { version = "0.4.41", features = ["serde"] }
+chrono = { version = "0.4.42", features = ["serde"] }
 chrono-tz = "0.10.4"
 bcrypt = "0.17.1"
 utoipa = { version = "5.4.0", features = ["actix_extras", "chrono"] }
@@ -31,10 +23,11 @@ log = "0.4.28"
 env_logger = "0.11.8"
 thiserror = "2.0.16"
 url = "2.5.2"
-clap = { version = "4.5.47", features = ["derive"] }
+clap = { version = "4.5.48", features = ["derive"] }
 tokio = { version = "1.37.0", features = ["full"] }
 num_cpus = "1.17.0"
-regex = "1.11.1"
+regex = "1.11.3"
 lazy_static = "1.5.0"
 uuid = { version = "1.18.1", features = ["v4"] }
 futures-util = "0.3.31"
+anyhow = "1.0.100"
