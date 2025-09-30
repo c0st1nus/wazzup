@@ -78,8 +78,33 @@ fn parse_uuid(value: &str) -> Result<Uuid, AppError> {
     Uuid::parse_str(value).map_err(|_| AppError::InvalidInput("Invalid UUID value".to_string()))
 }
 
+/// Парсит ID, который может быть UUID или другим форматом (например, числом)
+/// Если это не UUID, создает детерминированный UUID v5 на основе строки.
+/// 
+/// Wazzup API может отправлять ID в разных форматах:
+/// - UUID для каналов и некоторых чатов
+/// - Числовые ID для чатов (например, WhatsApp chat ID)
+/// 
+/// UUID v5 гарантирует, что один и тот же input всегда даст один и тот же UUID,
+/// что важно для идемпотентности обработки webhook'ов.
+fn parse_flexible_uuid(value: &str) -> Uuid {
+    // Пытаемся парсить как UUID
+    if let Ok(uuid) = Uuid::parse_str(value) {
+        return uuid;
+    }
+    
+    // Если не UUID, создаем детерминированный UUID v5 из строки
+    // Используем namespace DNS для согласованности
+    Uuid::new_v5(&Uuid::NAMESPACE_DNS, value.as_bytes())
+}
+
 fn parse_uuid_bytes(value: &str) -> Result<Vec<u8>, AppError> {
     Ok(uuid_to_bytes(&parse_uuid(value)?))
+}
+
+/// Парсит ID в байты, поддерживая как UUID, так и другие форматы
+fn parse_flexible_uuid_bytes(value: &str) -> Vec<u8> {
+    uuid_to_bytes(&parse_flexible_uuid(value))
 }
 
 fn parse_optional_uuid_bytes(value: Option<&String>) -> Option<Vec<u8>> {
@@ -286,6 +311,7 @@ async fn process_message(
     log::debug!("Processing message: message_id={}, channel_id={}, chat_id={}", 
         message.message_id, message.channel_id, message.chat_id);
 
+    // Channel ID должен быть UUID
     let channel_bytes = parse_uuid_bytes(&message.channel_id)
         .map_err(|e| {
             log::error!("Invalid channel_id '{}': {}", message.channel_id, e);
@@ -293,11 +319,10 @@ async fn process_message(
         })?;
     ensure_channel(db, channel_bytes.clone(), &message.chat_type).await?;
 
-    let chat_bytes = parse_uuid_bytes(&message.chat_id)
-        .map_err(|e| {
-            log::error!("Invalid chat_id '{}': {}", message.chat_id, e);
-            e
-        })?;
+    // Chat ID может быть числом или UUID - используем гибкий парсинг
+    let chat_bytes = parse_flexible_uuid_bytes(&message.chat_id);
+    let chat_uuid = Uuid::from_slice(&chat_bytes).unwrap_or_default();
+    log::debug!("Chat ID '{}' converted to UUID: {}", message.chat_id, chat_uuid);
     ensure_chat(
         db,
         chat_bytes.clone(),
@@ -306,14 +331,10 @@ async fn process_message(
     )
     .await?;
 
-    let message_uuid = match parse_uuid(&message.message_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::warn!("Invalid message_id '{}', generating new UUID: {}", message.message_id, e);
-            Uuid::new_v4()
-        }
-    };
+    // Message ID может быть в любом формате - используем гибкий парсинг
+    let message_uuid = parse_flexible_uuid(&message.message_id);
     let message_bytes = uuid_to_bytes(&message_uuid);
+    log::debug!("Message ID '{}' converted to UUID: {}", message.message_id, message_uuid);
 
     if messages::Entity::find_by_id(message_bytes.clone())
         .one(db)
