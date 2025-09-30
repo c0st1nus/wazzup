@@ -29,8 +29,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy the binaries from the builder stage
-COPY --from=builder /app/target/release/main /usr/local/bin/main
-COPY --from=builder /app/target/release/admin-cli /usr/local/bin/admin-cli
+COPY --from=builder /app/target/release/wazzup /usr/local/bin/wazzup
 
 # Copy static files
 COPY static ./static
@@ -39,4 +38,4 @@ COPY static ./static
 EXPOSE 8080 3245
 
 # Set the default command to run the main web server binary
-CMD ["main"]
+CMD ["wazzup"]
