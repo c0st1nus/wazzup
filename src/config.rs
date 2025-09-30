@@ -8,7 +8,6 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub webhook_port: Option<u16>,
-    pub client_database_url_template: String,
     pub public_url: Option<String>,
     pub timezone: Option<String>,
     pub max_body_bytes: Option<usize>,
@@ -16,6 +15,8 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, config::ConfigError> {
+        dotenvy::dotenv().ok();
+
         let cfg = config::Config::builder()
             .add_source(config::Environment::default())
             .build()?;
@@ -71,20 +72,6 @@ impl Config {
                     "Webhook port must differ from main port".to_string(),
                 ));
             }
-        }
-
-        // Проверяем, что шаблон URL базы данных содержит необходимый плейсхолдер
-        if !self.client_database_url_template.contains("{db_name}") {
-            return Err(config::ConfigError::Message(
-                "Database URL template must contain {db_name} placeholder".to_string(),
-            ));
-        }
-
-        // Проверяем, что URL не содержит очевидно небезопасных элементов path traversal
-        if self.client_database_url_template.contains("..") {
-            return Err(config::ConfigError::Message(
-                "Database URL template contains potentially unsafe path traversal".to_string(),
-            ));
         }
 
         // Валидируем временную зону
