@@ -5,10 +5,7 @@ use crate::{
     app_state::AppState,
     database::models::companies,
     errors::AppError,
-    services::{
-        wazzup_api::WebhookSubscriptionRequest,
-        webhook_handler,
-    },
+    services::{wazzup_api::WebhookSubscriptionRequest, webhook_handler},
 };
 
 use super::functions::{
@@ -16,8 +13,7 @@ use super::functions::{
     parse_company_id, uuid_to_bytes,
 };
 use super::structures::{
-    ConnectWebhooksResponse, TestWebhookResponse, WebhookStatusResponse,
-    WebhookValidationResponse,
+    ConnectWebhooksResponse, TestWebhookResponse, WebhookStatusResponse, WebhookValidationResponse,
 };
 
 /// Валидация webhook endpoint
@@ -118,11 +114,11 @@ pub async fn connect_webhooks(
 ) -> Result<HttpResponse, AppError> {
     let raw_id = path.into_inner();
     log::debug!("Connecting webhooks for company ID: {}", raw_id);
-    
+
     let company_uuid = parse_company_id(&raw_id)?;
     log::debug!("Parsed UUID: {}", company_uuid);
     log::debug!("UUID bytes: {:?}", uuid_to_bytes(&company_uuid));
-    
+
     let api_key = get_company_api_key_by_uuid(&company_uuid, &app_state.db).await?;
 
     let webhooks_uri = build_webhook_uri(&app_state, &req, &company_uuid);

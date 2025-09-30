@@ -80,11 +80,11 @@ fn parse_uuid(value: &str) -> Result<Uuid, AppError> {
 
 /// Парсит ID, который может быть UUID или другим форматом (например, числом)
 /// Если это не UUID, создает детерминированный UUID v5 на основе строки.
-/// 
+///
 /// Wazzup API может отправлять ID в разных форматах:
 /// - UUID для каналов и некоторых чатов
 /// - Числовые ID для чатов (например, WhatsApp chat ID)
-/// 
+///
 /// UUID v5 гарантирует, что один и тот же input всегда даст один и тот же UUID,
 /// что важно для идемпотентности обработки webhook'ов.
 fn parse_flexible_uuid(value: &str) -> Uuid {
@@ -92,7 +92,7 @@ fn parse_flexible_uuid(value: &str) -> Uuid {
     if let Ok(uuid) = Uuid::parse_str(value) {
         return uuid;
     }
-    
+
     // Если не UUID, создаем детерминированный UUID v5 из строки
     // Используем namespace DNS для согласованности
     Uuid::new_v5(&Uuid::NAMESPACE_DNS, value.as_bytes())
@@ -100,11 +100,6 @@ fn parse_flexible_uuid(value: &str) -> Uuid {
 
 fn parse_uuid_bytes(value: &str) -> Result<Vec<u8>, AppError> {
     Ok(uuid_to_bytes(&parse_uuid(value)?))
-}
-
-/// Парсит ID в байты, поддерживая как UUID, так и другие форматы
-fn parse_flexible_uuid_bytes(value: &str) -> Vec<u8> {
-    uuid_to_bytes(&parse_flexible_uuid(value))
 }
 
 fn parse_optional_uuid_bytes(value: Option<&String>) -> Option<Vec<u8>> {
@@ -173,10 +168,12 @@ async fn ensure_channel(
 
 async fn ensure_chat(
     db: &DatabaseConnection,
-    chat_bytes: Vec<u8>,
+    chat_uuid: &Uuid,
     channel_bytes: Vec<u8>,
     name_hint: Option<&str>,
 ) -> Result<(), AppError> {
+    let chat_bytes = uuid_to_bytes(chat_uuid);
+
     if let Some(existing) = chats::Entity::find_by_id(chat_bytes.clone())
         .one(db)
         .await?
@@ -199,18 +196,22 @@ async fn ensure_chat(
         let chat_name = name_hint
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| {
-                Uuid::from_slice(&chat_bytes)
-                    .unwrap_or_default()
-                    .to_string()
-            });
+            .unwrap_or_else(|| chat_uuid.to_string());
+
+        log::debug!(
+            "Creating new chat: uuid={}, channel_bytes len={}, name={}",
+            chat_uuid,
+            channel_bytes.len(),
+            chat_name
+        );
 
         let record = chats::ActiveModel {
-            id: Set(chat_bytes),
+            id: Set(uuid_to_bytes(chat_uuid)),
             channel_id: Set(channel_bytes),
             client_id: Set(None),
             name: Set(chat_name),
         };
+
         record.insert(db).await?;
     }
 
@@ -281,7 +282,11 @@ async fn handle_contacts(
 ) -> Result<(), AppError> {
     let company_bytes = uuid_to_bytes(company_uuid);
     let total = contacts.len();
-    log::info!("Processing {} contact(s) for company {}", total, company_uuid);
+    log::info!(
+        "Processing {} contact(s) for company {}",
+        total,
+        company_uuid
+    );
 
     for (idx, contact) in contacts.into_iter().enumerate() {
         let contact_id = contact.contact_id.clone();
@@ -308,24 +313,30 @@ async fn process_message(
 ) -> Result<(), AppError> {
     let _ = (bot_service, wazzup_api);
 
-    log::debug!("Processing message: message_id={}, channel_id={}, chat_id={}", 
-        message.message_id, message.channel_id, message.chat_id);
+    log::debug!(
+        "Processing message: message_id={}, channel_id={}, chat_id={}",
+        message.message_id,
+        message.channel_id,
+        message.chat_id
+    );
 
     // Channel ID должен быть UUID
-    let channel_bytes = parse_uuid_bytes(&message.channel_id)
-        .map_err(|e| {
-            log::error!("Invalid channel_id '{}': {}", message.channel_id, e);
-            e
-        })?;
+    let channel_bytes = parse_uuid_bytes(&message.channel_id).map_err(|e| {
+        log::error!("Invalid channel_id '{}': {}", message.channel_id, e);
+        e
+    })?;
     ensure_channel(db, channel_bytes.clone(), &message.chat_type).await?;
 
     // Chat ID может быть числом или UUID - используем гибкий парсинг
-    let chat_bytes = parse_flexible_uuid_bytes(&message.chat_id);
-    let chat_uuid = Uuid::from_slice(&chat_bytes).unwrap_or_default();
-    log::debug!("Chat ID '{}' converted to UUID: {}", message.chat_id, chat_uuid);
+    let chat_uuid = parse_flexible_uuid(&message.chat_id);
+    log::debug!(
+        "Chat ID '{}' converted to UUID: {}",
+        message.chat_id,
+        chat_uuid
+    );
     ensure_chat(
         db,
-        chat_bytes.clone(),
+        &chat_uuid,
         channel_bytes.clone(),
         message.client_name.as_deref(),
     )
@@ -333,9 +344,13 @@ async fn process_message(
 
     // Message ID может быть в любом формате - используем гибкий парсинг
     let message_uuid = parse_flexible_uuid(&message.message_id);
-    let message_bytes = uuid_to_bytes(&message_uuid);
-    log::debug!("Message ID '{}' converted to UUID: {}", message.message_id, message_uuid);
+    log::debug!(
+        "Message ID '{}' converted to UUID: {}",
+        message.message_id,
+        message_uuid
+    );
 
+    let message_bytes = uuid_to_bytes(&message_uuid);
     if messages::Entity::find_by_id(message_bytes.clone())
         .one(db)
         .await?
@@ -349,9 +364,9 @@ async fn process_message(
     let author_bytes = parse_optional_uuid_bytes(message.author_id.as_ref());
 
     let record = messages::ActiveModel {
-        id: Set(message_bytes),
+        id: Set(uuid_to_bytes(&message_uuid)),
         content: Set(build_message_content(&message)),
-        chat_id: Set(chat_bytes),
+        chat_id: Set(uuid_to_bytes(&chat_uuid)),
         is_inbound: Set(Some(if is_inbound { 1 } else { 0 })),
         is_echo: Set(message.is_echo.map(|value| if value { 1 } else { 0 })),
         direction_status: Set(Some(direction_status)),
@@ -379,12 +394,16 @@ async fn handle_messages(
     wazzup_api: &WazzupApiService,
 ) -> Result<(), AppError> {
     let total = messages.len();
-    log::info!("Processing {} message(s) for company {}", total, company_uuid);
-    
+    log::info!(
+        "Processing {} message(s) for company {}",
+        total,
+        company_uuid
+    );
+
     for (idx, message) in messages.into_iter().enumerate() {
         let msg_id = message.message_id.clone();
         log::debug!("Processing message {}/{}: id={}", idx + 1, total, msg_id);
-        
+
         if let Err(err) = process_message(company_uuid, message, db, bot_service, wazzup_api).await
         {
             log::error!(

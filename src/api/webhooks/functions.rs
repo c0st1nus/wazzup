@@ -4,9 +4,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    api::helpers::get_company_api_key,
-    app_state::AppState,
-    errors::AppError,
+    api::helpers::get_company_api_key, app_state::AppState, errors::AppError,
     services::wazzup_api::WebhookSubscriptions,
 };
 

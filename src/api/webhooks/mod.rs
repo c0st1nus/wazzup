@@ -3,14 +3,12 @@ pub mod handlers;
 pub mod structures;
 
 pub use handlers::{
-    __path_connect_webhooks, __path_handle_webhook, __path_test_webhook,
-    __path_validate_webhook, connect_webhooks, handle_webhook, init_routes, test_webhook,
-    validate_webhook,
+    __path_connect_webhooks, __path_handle_webhook, __path_test_webhook, __path_validate_webhook,
+    connect_webhooks, handle_webhook, init_routes, test_webhook, validate_webhook,
 };
 
 pub use structures::{
-    ConnectWebhooksResponse, TestWebhookResponse, WebhookStatusResponse,
-    WebhookValidationResponse,
+    ConnectWebhooksResponse, TestWebhookResponse, WebhookStatusResponse, WebhookValidationResponse,
 };
 
 pub use functions::{
