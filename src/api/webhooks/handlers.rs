@@ -2,6 +2,7 @@ use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use sea_orm::EntityTrait;
 
 use crate::{
+    api::helpers::uuid_to_bytes,
     app_state::AppState,
     database::models::companies,
     errors::AppError,
@@ -9,8 +10,7 @@ use crate::{
 };
 
 use super::functions::{
-    build_webhook_uri, default_webhook_subscriptions, get_company_api_key_by_uuid,
-    parse_company_id, uuid_to_bytes,
+    build_webhook_uri, default_webhook_subscriptions, get_company_api_key_by_uuid, parse_company_id,
 };
 use super::structures::{
     ConnectWebhooksResponse, TestWebhookResponse, WebhookStatusResponse, WebhookValidationResponse,

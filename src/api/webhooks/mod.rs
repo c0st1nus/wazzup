@@ -12,6 +12,5 @@ pub use structures::{
 };
 
 pub use functions::{
-    build_webhook_uri, default_webhook_subscriptions, get_company_api_key_by_uuid,
-    parse_company_id, uuid_from_bytes, uuid_to_bytes,
+    build_webhook_uri, default_webhook_subscriptions, get_company_api_key_by_uuid, parse_company_id,
 };

@@ -1,5 +1,5 @@
 use actix_web::HttpRequest;
-use sea_orm::{DatabaseConnection, DbErr};
+use sea_orm::DatabaseConnection;
 use url::Url;
 use uuid::Uuid;
 
@@ -7,28 +7,6 @@ use crate::{
     api::helpers::get_company_api_key, app_state::AppState, errors::AppError,
     services::wazzup_api::WebhookSubscriptions,
 };
-
-/// Конвертирует UUID в бинарный формат для хранения в базе данных
-pub fn uuid_to_bytes(uuid: &Uuid) -> Vec<u8> {
-    uuid.as_bytes().to_vec()
-}
-
-/// Конвертирует бинарные данные обратно в UUID
-pub fn uuid_from_bytes(bytes: &[u8]) -> Result<Uuid, DbErr> {
-    match bytes.len() {
-        16 => Uuid::from_slice(bytes).map_err(|e| DbErr::Custom(format!("Invalid UUID data: {e}"))),
-        8 => {
-            let mut padded = [0u8; 16];
-            padded[8..].copy_from_slice(bytes);
-            Uuid::from_slice(&padded).map_err(|e| DbErr::Custom(format!("Invalid UUID data: {e}")))
-        }
-        0 => Ok(Uuid::nil()),
-        other => Err(DbErr::Custom(format!(
-            "Invalid UUID length: expected 16 or 8 bytes, found {}",
-            other
-        ))),
-    }
-}
 
 /// Получает API ключ компании из базы данных по UUID
 pub async fn get_company_api_key_by_uuid(
