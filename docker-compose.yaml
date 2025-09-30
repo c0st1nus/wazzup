@@ -8,24 +8,25 @@ services:
       - "1242:8080"
       - "3245:3245"
     depends_on:
-      - postgres
+      - mysql
     env_file:
       - ./.env
     networks:
       - wazzup_network
 
-  postgres:
-    image: postgres:15
-    container_name: wazzup_postgres
-    ports:
-      - "5432:5432"
+  mysql:
+    image: mysql:8
+    container_name: wazzup_mysql
     environment:
-      POSTGRES_DB: main
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password123
-      POSTGRES_PORT: 5432
+      - MYSQL_DATABASE=ai_units
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=pass
+      - MYSQL_ROOT_PASSWORD=pass
     volumes:
-      - postgres_data_rust:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+      - ./dumps/dump.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "3307:3306"
     networks:
       - wazzup_network
 
@@ -35,9 +36,9 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - postgres
+      - mysql
     environment:
-      - DBGATE_DATABASE_URL=postgres://postgres:password123@postgres:5432/main
+      - DBGATE_DATABASE_URL=mysql://user:pass@mysql:3306/ai_units
     networks:
       - wazzup_network
 
@@ -46,4 +47,4 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data_rust:
+  mysql_data:
