@@ -172,9 +172,9 @@ async fn ensure_chat(
     channel_bytes: Vec<u8>,
     name_hint: Option<&str>,
 ) -> Result<(), AppError> {
-    let chat_bytes = uuid_to_bytes(chat_uuid);
+    let chat_id_str = chat_uuid.to_string();
 
-    if let Some(existing) = chats::Entity::find_by_id(chat_bytes.clone())
+    if let Some(existing) = chats::Entity::find_by_id(chat_id_str.clone())
         .one(db)
         .await?
     {
@@ -206,13 +206,14 @@ async fn ensure_chat(
         );
 
         let record = chats::ActiveModel {
-            id: Set(uuid_to_bytes(chat_uuid)),
+            id: Set(chat_id_str.clone()),
             channel_id: Set(channel_bytes),
             client_id: Set(None),
             name: Set(chat_name),
         };
 
         record.insert(db).await?;
+        log::info!("Successfully created chat: {}", chat_uuid);
     }
 
     Ok(())
@@ -366,7 +367,7 @@ async fn process_message(
     let record = messages::ActiveModel {
         id: Set(uuid_to_bytes(&message_uuid)),
         content: Set(build_message_content(&message)),
-        chat_id: Set(uuid_to_bytes(&chat_uuid)),
+        chat_id: Set(chat_uuid.to_string()),
         is_inbound: Set(Some(if is_inbound { 1 } else { 0 })),
         is_echo: Set(message.is_echo.map(|value| if value { 1 } else { 0 })),
         direction_status: Set(Some(direction_status)),

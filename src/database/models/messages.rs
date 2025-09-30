@@ -8,8 +8,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false, column_type = "Binary(16)")]
     pub id: Vec<u8>,
     pub content: Json,
-    #[sea_orm(column_type = "Binary(16)")]
-    pub chat_id: Vec<u8>,
+    pub chat_id: String,
     pub is_inbound: Option<i8>,
     pub is_echo: Option<i8>,
     pub direction_status: Option<String>,

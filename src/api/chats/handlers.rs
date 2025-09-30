@@ -30,13 +30,13 @@ use super::structures::{
 
 #[derive(FromQueryResult)]
 struct LastMessageMeta {
-    chat_id: Vec<u8>,
+    chat_id: String,
     last_created_at: Option<DateTimeUtc>,
 }
 
 #[derive(FromQueryResult)]
 struct InboundCountMeta {
-    chat_id: Vec<u8>,
+    chat_id: String,
     unread_count: i64,
 }
 
@@ -68,7 +68,7 @@ pub async fn get_chat_previews(
     let params = query.into_inner();
 
     let chat_records = load_company_chats(&ctx, &app_state, params.filter.clone()).await?;
-    let chat_ids: Vec<Vec<u8>> = chat_records
+    let chat_ids: Vec<String> = chat_records
         .iter()
         .map(|record| record.chat.id.clone())
         .collect();
@@ -86,9 +86,9 @@ pub async fn get_chat_previews(
 
     let mut previews: Vec<(ChatPreview, Option<DateTimeUtc>)> = Vec::new();
     for record in &chat_records {
-        let last_timestamp = last_message_map.get(record.chat.id.as_slice()).cloned();
+        let last_timestamp = last_message_map.get(record.chat.id.as_str()).cloned();
         let unread_count = unread_map
-            .get(record.chat.id.as_slice())
+            .get(record.chat.id.as_str())
             .copied()
             .unwrap_or(0);
 
@@ -118,17 +118,17 @@ pub async fn get_chat_previews(
     let (offset, count) = normalize_pagination(params.offset, params.count)?;
     let sliced = slice_previews(previews, offset, count);
 
-    let selected_ids: Vec<Vec<u8>> = sliced
+    let selected_ids: Vec<String> = sliced
         .iter()
-        .map(|(preview, _)| uuid_to_vec(&preview.id))
-        .collect::<Result<_, _>>()?;
+        .map(|(preview, _)| preview.id.clone())
+        .collect();
 
     let (last_messages, author_ids) = load_last_messages(&app_state, &selected_ids).await?;
     let author_map = load_users(&app_state, &author_ids).await?;
 
     let mut response_data = Vec::new();
-    for ((mut preview, _), chat_id_bytes) in sliced.into_iter().zip(selected_ids.into_iter()) {
-        if let Some(message) = last_messages.get(chat_id_bytes.as_slice()) {
+    for ((mut preview, _), chat_id_str) in sliced.into_iter().zip(selected_ids.into_iter()) {
+        if let Some(message) = last_messages.get(chat_id_str.as_str()) {
             let sender =
                 resolve_message_sender(message, &author_map, &user_map, preview.client.as_ref());
             preview.last_message = Some(build_message_view(message, sender)?);
@@ -170,7 +170,7 @@ pub async fn get_chat(
 
     let unread_map = load_inbound_counts(&app_state, &[record.chat.id.clone()]).await?;
     let unread_count = unread_map
-        .get(record.chat.id.as_slice())
+        .get(record.chat.id.as_str())
         .copied()
         .unwrap_or(0);
 
@@ -193,7 +193,7 @@ pub async fn get_chat(
         load_last_messages(&app_state, &[record.chat.id.clone()]).await?;
     let author_map = load_users(&app_state, &author_ids).await?;
 
-    if let Some(message) = last_messages.get(record.chat.id.as_slice()) {
+    if let Some(message) = last_messages.get(record.chat.id.as_str()) {
         let sender =
             resolve_message_sender(message, &author_map, &user_map, preview.client.as_ref());
         preview.last_message = Some(build_message_view(message, sender)?);
@@ -429,9 +429,9 @@ async fn load_single_chat(
     app_state: &web::Data<AppState>,
     chat_uuid: &Uuid,
 ) -> Result<ChatRecord, AppError> {
-    let chat_id_bytes = uuid_to_bytes(chat_uuid);
+    let chat_id_str = chat_uuid.to_string();
 
-    let query = chats::Entity::find_by_id(chat_id_bytes.clone())
+    let query = chats::Entity::find_by_id(chat_id_str.clone())
         .join(JoinType::InnerJoin, chats::Relation::Clients.def())
         .filter(clients::Column::CompanyId.eq(ctx.company_id_bytes.clone()))
         .find_also_related(clients::Entity)
@@ -453,8 +453,8 @@ async fn load_single_chat(
 
 async fn load_last_message_metadata(
     app_state: &web::Data<AppState>,
-    chat_ids: &[Vec<u8>],
-) -> Result<HashMap<Vec<u8>, DateTimeUtc>, AppError> {
+    chat_ids: &[String],
+) -> Result<HashMap<String, DateTimeUtc>, AppError> {
     if chat_ids.is_empty() {
         return Ok(HashMap::new());
     }
@@ -480,8 +480,8 @@ async fn load_last_message_metadata(
 
 async fn load_inbound_counts(
     app_state: &web::Data<AppState>,
-    chat_ids: &[Vec<u8>],
-) -> Result<HashMap<Vec<u8>, i64>, AppError> {
+    chat_ids: &[String],
+) -> Result<HashMap<String, i64>, AppError> {
     if chat_ids.is_empty() {
         return Ok(HashMap::new());
     }
@@ -528,7 +528,7 @@ fn build_chat_preview(
     unread_count: i64,
     user_map: &HashMap<Vec<u8>, users::Model>,
 ) -> Result<(ChatPreview, bool), AppError> {
-    let chat_id = uuid_bytes_to_string(&record.chat.id)?;
+    let chat_id = record.chat.id.clone();
     let channel_summary = ChannelSummary {
         id: uuid_bytes_to_string(&record.chat.channel_id)?,
         transport: record
@@ -634,8 +634,8 @@ fn slice_previews(
 
 async fn load_last_messages(
     app_state: &web::Data<AppState>,
-    chat_ids: &[Vec<u8>],
-) -> Result<(HashMap<Vec<u8>, messages::Model>, HashSet<Vec<u8>>), AppError> {
+    chat_ids: &[String],
+) -> Result<(HashMap<String, messages::Model>, HashSet<Vec<u8>>), AppError> {
     if chat_ids.is_empty() {
         return Ok((HashMap::new(), HashSet::new()));
     }

@@ -5,8 +5,8 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "chats")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_type = "Binary(16)")]
-    pub id: Vec<u8>,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: String,
     #[sea_orm(column_type = "Binary(16)")]
     pub channel_id: Vec<u8>,
     #[sea_orm(column_type = "Binary(16)", nullable)]
