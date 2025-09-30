@@ -36,7 +36,7 @@ COPY --from=builder /app/target/release/admin-cli /usr/local/bin/admin-cli
 COPY static ./static
 
 # Expose the port for the web server (assuming default Actix Web port)
-EXPOSE 8080
+EXPOSE 8080 3245
 
 # Set the default command to run the main web server binary
 CMD ["main"]

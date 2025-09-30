@@ -5,7 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "1242:1242"
+      - "1242:8080"
+      - "3245:3245"
     depends_on:
       - postgres
     env_file:

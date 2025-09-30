@@ -104,6 +104,7 @@ async fn main() -> std::io::Result<()> {
 
     let host = config.host.clone();
     let port = config.port;
+    let webhook_port = config.effective_webhook_port();
 
     log::info!("Starting server at http://{}:{}", host, port);
     log::info!(
@@ -112,17 +113,25 @@ async fn main() -> std::io::Result<()> {
         port
     );
 
-    HttpServer::new(move || {
+    log::info!(
+        "Webhook listener starting at http://{}:{}",
+        host,
+        webhook_port
+    );
+    let api_db = db.clone();
+    let api_config = config.clone();
+    let api_host = host.clone();
+
+    let api_server = HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(AppState {
-                db: db.clone(),
-                config: config.clone(),
+                db: api_db.clone(),
+                config: api_config.clone(),
                 wazzup_api: wazzup_api::WazzupApiService::new(),
                 bot_service: bot_service::BotService::new(),
             }))
-            // Глобальный лимит размера тела (1MB)
             .app_data(actix_web::web::PayloadConfig::new(
-                config.effective_max_body_bytes(),
+                api_config.effective_max_body_bytes(),
             ))
             .wrap(api::middleware::RequestId)
             .wrap(
@@ -138,19 +147,46 @@ async fn main() -> std::io::Result<()> {
                     .use_last_modified(true),
             )
             .service(
-                web::scope("/api/v2")
+                web::scope("/api")
                     .wrap(middleware::NormalizePath::trim())
                     .configure(channels::init_routes)
                     .configure(chats::init_routes)
-                    .configure(contacts::init_routes)
-                    .configure(webhooks::init_routes),
+                    .configure(contacts::init_routes),
             )
             .service(web::redirect("/swagger", "/swagger/"))
             .service(
                 SwaggerUi::new("/swagger/{_:.*}").url("/api-docs/openapi.json", ApiDoc::openapi()),
             )
     })
-    .bind((host, port))?
-    .run()
-    .await
+    .bind((api_host, port))?
+    .run();
+
+    let webhook_db = db.clone();
+    let webhook_config = config.clone();
+    let webhook_host = host.clone();
+
+    let webhook_server = HttpServer::new(move || {
+        App::new()
+            .app_data(web::Data::new(AppState {
+                db: webhook_db.clone(),
+                config: webhook_config.clone(),
+                wazzup_api: wazzup_api::WazzupApiService::new(),
+                bot_service: bot_service::BotService::new(),
+            }))
+            .app_data(actix_web::web::PayloadConfig::new(
+                webhook_config.effective_max_body_bytes(),
+            ))
+            .wrap(api::middleware::RequestId)
+            .service(
+                web::scope("/api")
+                    .wrap(middleware::NormalizePath::trim())
+                    .configure(webhooks::init_routes),
+            )
+    })
+    .bind((webhook_host, webhook_port))?
+    .run();
+
+    tokio::try_join!(api_server, webhook_server)?;
+
+    Ok(())
 }

@@ -1,6 +1,7 @@
 use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use sea_orm::EntityTrait;
 use serde::Serialize;
+use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -121,13 +122,7 @@ async fn connect_webhooks(
     let company_uuid = parse_company_id(&path.into_inner())?;
     let api_key = get_company_api_key(&company_uuid, &app_state.db).await?;
 
-    let webhooks_uri = if let Some(public_url) = &app_state.config.public_url {
-        format!("{}/api/webhook/{}", public_url, company_uuid)
-    } else {
-        let host = req.connection_info().host().to_string();
-        let scheme = req.connection_info().scheme().to_string();
-        format!("{}://{}/api/webhook/{}", scheme, host, company_uuid)
-    };
+    let webhooks_uri = build_webhook_uri(&app_state, &req, &company_uuid);
 
     let subscriptions = WebhookSubscriptions {
         messages_and_statuses: true,
@@ -151,6 +146,35 @@ async fn connect_webhooks(
         webhooks_uri,
         subscriptions,
     }))
+}
+
+fn build_webhook_uri(app_state: &AppState, req: &HttpRequest, company_uuid: &Uuid) -> String {
+    let webhook_port = app_state.config.effective_webhook_port();
+
+    if let Some(public_url) = &app_state.config.public_url {
+        if let Ok(mut url) = Url::parse(public_url) {
+            let _ = url.set_port(Some(webhook_port));
+            url.set_path(&format!("/api/webhook/{}", company_uuid));
+            return url.to_string();
+        }
+    }
+
+    let conn_info = req.connection_info().clone();
+    let scheme = conn_info.scheme().to_owned();
+    let host = conn_info.host().to_owned();
+    let base = format!("{}://{}", scheme, host);
+
+    match Url::parse(&base) {
+        Ok(mut url) => {
+            let _ = url.set_port(Some(webhook_port));
+            url.set_path(&format!("/api/webhook/{}", company_uuid));
+            url.to_string()
+        }
+        Err(_) => format!(
+            "http://localhost:{}/api/webhook/{}",
+            webhook_port, company_uuid
+        ),
+    }
 }
 
 #[utoipa::path(

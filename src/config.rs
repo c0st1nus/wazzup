@@ -7,6 +7,7 @@ use std::str::FromStr;
 pub struct Config {
     pub host: String,
     pub port: u16,
+    pub webhook_port: Option<u16>,
     pub client_database_url_template: String,
     pub public_url: Option<String>,
     pub timezone: Option<String>,
@@ -58,6 +59,20 @@ impl Config {
             ));
         }
 
+        if let Some(webhook_port) = self.webhook_port {
+            if webhook_port < 1024 {
+                return Err(config::ConfigError::Message(
+                    "Webhook port must be 1024 or higher for security reasons".to_string(),
+                ));
+            }
+
+            if webhook_port == self.port {
+                return Err(config::ConfigError::Message(
+                    "Webhook port must differ from main port".to_string(),
+                ));
+            }
+        }
+
         // Проверяем, что шаблон URL базы данных содержит необходимый плейсхолдер
         if !self.client_database_url_template.contains("{db_name}") {
             return Err(config::ConfigError::Message(
@@ -101,6 +116,10 @@ impl Config {
 impl Config {
     pub fn effective_max_body_bytes(&self) -> usize {
         self.max_body_bytes.unwrap_or(100 * 1024 * 1024)
+    }
+
+    pub fn effective_webhook_port(&self) -> u16 {
+        self.webhook_port.unwrap_or(3245)
     }
 }
 
