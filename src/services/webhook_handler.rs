@@ -255,11 +255,16 @@ async fn handle_contacts(
     db: &DatabaseConnection,
 ) -> Result<(), AppError> {
     let company_bytes = uuid_to_bytes(company_uuid);
+    let total = contacts.len();
+    log::info!("Processing {} contact(s) for company {}", total, company_uuid);
 
-    for contact in contacts {
+    for (idx, contact) in contacts.into_iter().enumerate() {
+        let contact_id = contact.contact_id.clone();
         if let Err(err) = process_contact(&company_bytes, contact, db).await {
             log::error!(
-                "Failed to process contact for company {}: {}",
+                "Failed to process contact #{} (id={}) for company {}: {}",
+                idx + 1,
+                contact_id,
                 company_uuid,
                 err
             );
@@ -278,10 +283,21 @@ async fn process_message(
 ) -> Result<(), AppError> {
     let _ = (bot_service, wazzup_api);
 
-    let channel_bytes = parse_uuid_bytes(&message.channel_id)?;
+    log::debug!("Processing message: message_id={}, channel_id={}, chat_id={}", 
+        message.message_id, message.channel_id, message.chat_id);
+
+    let channel_bytes = parse_uuid_bytes(&message.channel_id)
+        .map_err(|e| {
+            log::error!("Invalid channel_id '{}': {}", message.channel_id, e);
+            e
+        })?;
     ensure_channel(db, channel_bytes.clone(), &message.chat_type).await?;
 
-    let chat_bytes = parse_uuid_bytes(&message.chat_id)?;
+    let chat_bytes = parse_uuid_bytes(&message.chat_id)
+        .map_err(|e| {
+            log::error!("Invalid chat_id '{}': {}", message.chat_id, e);
+            e
+        })?;
     ensure_chat(
         db,
         chat_bytes.clone(),
@@ -292,7 +308,10 @@ async fn process_message(
 
     let message_uuid = match parse_uuid(&message.message_id) {
         Ok(uuid) => uuid,
-        Err(_) => Uuid::new_v4(),
+        Err(e) => {
+            log::warn!("Invalid message_id '{}', generating new UUID: {}", message.message_id, e);
+            Uuid::new_v4()
+        }
     };
     let message_bytes = uuid_to_bytes(&message_uuid);
 
@@ -338,11 +357,19 @@ async fn handle_messages(
     bot_service: &BotService,
     wazzup_api: &WazzupApiService,
 ) -> Result<(), AppError> {
-    for message in messages {
+    let total = messages.len();
+    log::info!("Processing {} message(s) for company {}", total, company_uuid);
+    
+    for (idx, message) in messages.into_iter().enumerate() {
+        let msg_id = message.message_id.clone();
+        log::debug!("Processing message {}/{}: id={}", idx + 1, total, msg_id);
+        
         if let Err(err) = process_message(company_uuid, message, db, bot_service, wazzup_api).await
         {
             log::error!(
-                "Failed to process message for company {}: {}",
+                "Failed to process message #{} (id={}) for company {}: {}",
+                idx + 1,
+                msg_id,
                 company_uuid,
                 err
             );
