@@ -1,49 +1,38 @@
 use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use sea_orm::EntityTrait;
-use serde::Serialize;
-use url::Url;
-use utoipa::ToSchema;
-use uuid::Uuid;
 
 use crate::{
-    api::helpers::{get_company_api_key, uuid_to_bytes},
     app_state::AppState,
     database::models::companies,
     errors::AppError,
     services::{
-        wazzup_api::{WebhookSubscriptionRequest, WebhookSubscriptions},
+        wazzup_api::WebhookSubscriptionRequest,
         webhook_handler,
     },
 };
 
-// --- DTOs (Data Transfer Objects) ---
+use super::functions::{
+    build_webhook_uri, default_webhook_subscriptions, get_company_api_key_by_uuid,
+    parse_company_id, uuid_to_bytes,
+};
+use super::structures::{
+    ConnectWebhooksResponse, TestWebhookResponse, WebhookStatusResponse,
+    WebhookValidationResponse,
+};
 
-#[derive(Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ConnectWebhooksResponse {
-    ok: bool,
-    webhooks_uri: String,
-    subscriptions: WebhookSubscriptions,
-}
-
-// --- Route Handlers ---
-
-fn parse_company_id(raw: &str) -> Result<Uuid, AppError> {
-    Uuid::parse_str(raw).map_err(|_| AppError::InvalidInput("Invalid company ID".to_string()))
-}
-
+/// Валидация webhook endpoint
 #[utoipa::path(
     get,
     path = "/api/webhook/{id}",
     tag = "Webhooks",
     params(("id" = String, Path, description = "Company UUID")),
     responses(
-        (status = 200, description = "Webhook validation successful", body = inline(serde_json::Value)),
+        (status = 200, description = "Webhook validation successful", body = WebhookValidationResponse),
         (status = 404, description = "Company not found")
     )
 )]
 #[get("/{id}")]
-async fn validate_webhook(
+pub async fn validate_webhook(
     app_state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, AppError> {
@@ -55,12 +44,15 @@ async fn validate_webhook(
         .await?
         .ok_or_else(|| AppError::NotFound("Company not found".to_string()))?;
 
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "status": "ok",
-        "message": "Webhook endpoint is valid"
-    })))
+    let response = WebhookValidationResponse {
+        status: "ok".to_string(),
+        message: "Webhook endpoint is valid".to_string(),
+    };
+
+    Ok(HttpResponse::Ok().json(response))
 }
 
+/// Обработка входящих вебхуков
 #[utoipa::path(
     post,
     path = "/api/webhook/{id}",
@@ -68,14 +60,14 @@ async fn validate_webhook(
     params(("id" = String, Path, description = "Company UUID")),
     request_body = webhook_handler::WebhookRequest,
     responses(
-        (status = 200, description = "Webhook processed successfully", body = inline(serde_json::Value)),
+        (status = 200, description = "Webhook processed successfully", body = WebhookStatusResponse),
         (status = 400, description = "Failed to process webhook"),
         (status = 404, description = "Company not found"),
         (status = 500, description = "Internal Server Error")
     )
 )]
 #[post("/{id}")]
-async fn handle_webhook(
+pub async fn handle_webhook(
     app_state: web::Data<AppState>,
     path: web::Path<String>,
     body: web::Json<webhook_handler::WebhookRequest>,
@@ -99,9 +91,14 @@ async fn handle_webhook(
     )
     .await?;
 
-    Ok(HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })))
+    let response = WebhookStatusResponse {
+        status: "ok".to_string(),
+    };
+
+    Ok(HttpResponse::Ok().json(response))
 }
 
+/// Подключение вебхуков для компании
 #[utoipa::path(
     get,
     path = "/api/webhook/{id}/connect",
@@ -114,22 +111,22 @@ async fn handle_webhook(
     )
 )]
 #[get("/{id}/connect")]
-async fn connect_webhooks(
+pub async fn connect_webhooks(
     app_state: web::Data<AppState>,
     req: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse, AppError> {
-    let company_uuid = parse_company_id(&path.into_inner())?;
-    let api_key = get_company_api_key(&company_uuid, &app_state.db).await?;
+    let raw_id = path.into_inner();
+    log::debug!("Connecting webhooks for company ID: {}", raw_id);
+    
+    let company_uuid = parse_company_id(&raw_id)?;
+    log::debug!("Parsed UUID: {}", company_uuid);
+    log::debug!("UUID bytes: {:?}", uuid_to_bytes(&company_uuid));
+    
+    let api_key = get_company_api_key_by_uuid(&company_uuid, &app_state.db).await?;
 
     let webhooks_uri = build_webhook_uri(&app_state, &req, &company_uuid);
-
-    let subscriptions = WebhookSubscriptions {
-        messages_and_statuses: true,
-        contacts_and_deals_creation: true,
-        channels_updates: true,
-        template_status: true,
-    };
+    let subscriptions = default_webhook_subscriptions();
 
     let request = WebhookSubscriptionRequest {
         webhooks_uri: webhooks_uri.clone(),
@@ -141,54 +138,28 @@ async fn connect_webhooks(
         .connect_webhooks(&api_key, &request)
         .await?;
 
-    Ok(HttpResponse::Ok().json(ConnectWebhooksResponse {
+    let response = ConnectWebhooksResponse {
         ok: true,
         webhooks_uri,
         subscriptions,
-    }))
+    };
+
+    Ok(HttpResponse::Ok().json(response))
 }
 
-fn build_webhook_uri(app_state: &AppState, req: &HttpRequest, company_uuid: &Uuid) -> String {
-    let webhook_port = app_state.config.effective_webhook_port();
-
-    if let Some(public_url) = &app_state.config.public_url {
-        if let Ok(mut url) = Url::parse(public_url) {
-            let _ = url.set_port(Some(webhook_port));
-            url.set_path(&format!("/api/webhook/{}", company_uuid));
-            return url.to_string();
-        }
-    }
-
-    let conn_info = req.connection_info().clone();
-    let scheme = conn_info.scheme().to_owned();
-    let host = conn_info.host().to_owned();
-    let base = format!("{}://{}", scheme, host);
-
-    match Url::parse(&base) {
-        Ok(mut url) => {
-            let _ = url.set_port(Some(webhook_port));
-            url.set_path(&format!("/api/webhook/{}", company_uuid));
-            url.to_string()
-        }
-        Err(_) => format!(
-            "http://localhost:{}/api/webhook/{}",
-            webhook_port, company_uuid
-        ),
-    }
-}
-
+/// Тестирование webhook endpoint
 #[utoipa::path(
     post,
     path = "/api/webhook/{id}/test",
     tag = "Webhooks",
     params(("id" = String, Path, description = "Company UUID")),
     responses(
-        (status = 200, description = "Test webhook processed successfully"),
+        (status = 200, description = "Test webhook processed successfully", body = TestWebhookResponse),
         (status = 400, description = "Test webhook failed")
     )
 )]
 #[post("/{id}/test")]
-async fn test_webhook(
+pub async fn test_webhook(
     app_state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, AppError> {
@@ -209,13 +180,15 @@ async fn test_webhook(
     )
     .await?;
 
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "status": "ok",
-        "message": "Test webhook processed successfully"
-    })))
+    let response = TestWebhookResponse {
+        status: "ok".to_string(),
+        message: "Test webhook processed successfully".to_string(),
+    };
+
+    Ok(HttpResponse::Ok().json(response))
 }
 
-// Функция для регистрации всех маршрутов этого модуля
+/// Регистрация всех маршрутов вебхуков
 pub fn init_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/webhook")

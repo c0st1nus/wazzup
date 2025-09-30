@@ -151,7 +151,8 @@ async fn main() -> std::io::Result<()> {
                     .wrap(middleware::NormalizePath::trim())
                     .configure(channels::init_routes)
                     .configure(chats::init_routes)
-                    .configure(contacts::init_routes),
+                    .configure(contacts::init_routes)
+                    .configure(webhooks::init_routes),
             )
             .service(web::redirect("/swagger", "/swagger/"))
             .service(
