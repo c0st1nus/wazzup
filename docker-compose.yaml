@@ -5,12 +5,14 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "1242:8080"
+      - "1242:1242"
       - "3245:3245"
     depends_on:
       - mysql
     env_file:
       - ./.env
+    environment:
+      - RUST_LOG=debug
     networks:
       - wazzup_network
 
@@ -34,7 +36,7 @@ services:
     image: dbgate/dbgate
     container_name: wazzup_dbgate
     ports:
-      - "3000:3000"
+      - "0.0.0.0:3000:3000"
     depends_on:
       - mysql
     environment:
