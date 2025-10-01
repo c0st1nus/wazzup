@@ -71,7 +71,7 @@ fn build_contact_view(
     Ok(ContactWithWazzupData {
         id,
         full_name: client.full_name,
-        email: client.email,
+        email: client.email.unwrap_or_default(),
         phone: client.phone,
         wazzup_chat,
         created_at: client.created_at,
@@ -339,7 +339,7 @@ async fn update_contact(
 
     let mut active_client: clients::ActiveModel = existing_client.clone().into();
     active_client.full_name = Set(update_data.full_name.clone());
-    active_client.email = Set(update_data.email.clone());
+    active_client.email = Set(Some(update_data.email.clone()));
     active_client.phone = Set(sanitized_phone);
 
     let updated_client = active_client.update(&app_state.db).await?;

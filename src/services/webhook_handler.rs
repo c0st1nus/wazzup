@@ -254,7 +254,7 @@ async fn process_contact(
         active.full_name = Set(contact
             .name
             .unwrap_or_else(|| "Unnamed contact".to_string()));
-        active.email = Set(email);
+        active.email = Set(Some(email));
         active.phone = Set(sanitized_phone);
         active.company_id = Set(Some(company_bytes.to_vec()));
         active.update(db).await?;
@@ -265,7 +265,7 @@ async fn process_contact(
             full_name: Set(contact
                 .name
                 .unwrap_or_else(|| "Unnamed contact".to_string())),
-            email: Set(email),
+            email: Set(Some(email)),
             phone: Set(sanitized_phone),
             responsible_user_id: Set(Uuid::nil().as_bytes().to_vec()),
             created_at: Set(Utc::now().into()),

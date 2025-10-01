@@ -10,8 +10,7 @@ pub struct Model {
     #[sea_orm(column_type = "Binary(16)", nullable)]
     pub company_id: Option<Vec<u8>>,
     pub full_name: String,
-    #[sea_orm(unique)]
-    pub email: String,
+    pub email: Option<String>,
     pub phone: Option<String>,
     #[sea_orm(column_type = "Binary(16)")]
     pub responsible_user_id: Vec<u8>,
