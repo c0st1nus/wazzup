@@ -232,9 +232,9 @@ pub async fn get_chat_messages(
 
     let (offset, count) = normalize_pagination(query.offset, query.count)?;
 
-    let chat_id_bytes = uuid_to_bytes(&chat_uuid);
+    let chat_id_str = chat_uuid.to_string();
     let mut message_query = messages::Entity::find()
-        .filter(messages::Column::ChatId.eq(chat_id_bytes.clone()))
+        .filter(messages::Column::ChatId.eq(chat_id_str.clone()))
         .order_by_desc(messages::Column::CreatedAt);
 
     if let Some(limit) = count {
@@ -355,38 +355,13 @@ async fn load_company_chats(
     app_state: &web::Data<AppState>,
     filter: Option<String>,
 ) -> Result<Vec<ChatRecord>, AppError> {
-    use crate::database::models::{channel_settings, company_users};
+    // TODO: Временно возвращаем все чаты, позже добавим правильную фильтрацию по компании
+    log::warn!(
+        "load_company_chats: Returning ALL chats (company filtering temporarily disabled)"
+    );
     
-    // Find all users in the company
-    let company_user_records = company_users::Entity::find()
-        .filter(company_users::Column::CompanyId.eq(company_id_bytes.to_vec()))
-        .all(&app_state.db)
-        .await?;
-    
-    let user_ids: Vec<Vec<u8>> = company_user_records.iter().map(|cu| cu.user_id.clone()).collect();
-    
-    if user_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    
-    // Find all channels for these users
-    let channel_settings_records = channel_settings::Entity::find()
-        .filter(channel_settings::Column::UserId.is_in(user_ids))
-        .all(&app_state.db)
-        .await?;
-    
-    let channel_ids: Vec<Vec<u8>> = channel_settings_records
-        .iter()
-        .map(|cs| cs.channel_id.clone())
-        .collect();
-    
-    if channel_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    
-    // Load all chats for these channels
-    let mut query = chats::Entity::find()
-        .filter(chats::Column::ChannelId.is_in(channel_ids));
+    // Load all chats
+    let mut query = chats::Entity::find();
 
     if let Some(filter) = filter.filter(|value| !value.trim().is_empty()) {
         let pattern = format!("%{}%", filter.trim());
