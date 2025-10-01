@@ -1,35 +1,35 @@
 # Use a multi-stage build to keep the final image small
 
 # Stage 1: Build the application
-FROM rust:1.85 AS builder
+FROM rust:1.85-slim AS backend-builder
 
-# Set the working directory
 WORKDIR /app
 
-# Copy the Cargo.toml and Cargo.lock files first to cache dependencies
-COPY Cargo.toml Cargo.lock ./
-
-# Copy the source code
-COPY src ./src
-
-# Build the release binaries
-RUN cargo build --release
-
-# Stage 2: Create a slim runtime image
-FROM debian:bookworm-slim
-
-# Install any necessary runtime dependencies (e.g., for SQL drivers or TLS)
-RUN apt-get update && apt-get install -y \
-    libpq5 \
-    libmariadb3 \
-    ca-certificates \
+# Install build dependencies (curl is needed for utoipa-swagger-ui build script)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    libmariadb-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory
-WORKDIR /app
+# Copy dependency manifests
+COPY Cargo.toml Cargo.lock ./
 
-# Copy the binaries from the builder stage
-COPY --from=builder /app/target/release/wazzup /usr/local/bin/wazzup
+# Create dummy source to cache dependencies
+# Copy lib.rs as well to avoid issues with library crates
+RUN mkdir -p src && \
+    echo "fn main() {}" > src/main.rs && \
+    echo "pub fn dummy() {}" > src/lib.rs && \
+    cargo build --release && \
+    rm -rf src target/release/deps/wazzup* target/release/wazzup target/release/wazzup.d
+
+# Copy actual source code
+COPY src ./src
+
+# Build the release binary with optimizations
+RUN cargo build --release && \
+    strip --strip-all target/release/wazzup
 
 # Copy static files
 COPY static ./static
@@ -38,4 +38,4 @@ COPY static ./static
 EXPOSE 8080 3245
 
 # Set the default command to run the main web server binary
-CMD ["wazzup"]
+CMD ["target/release/wazzup"]
