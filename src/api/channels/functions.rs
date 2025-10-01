@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
     Set,
@@ -8,48 +6,19 @@ use uuid::Uuid;
 
 use crate::{
     api::helpers::get_company_api_key,
-    database::models::{channel_settings, channels},
+    database::models::channels,
     errors::AppError,
     services::wazzup_api::ChannelListResponse,
 };
 
-pub use crate::api::context::{AdminContext, bytes_to_uuid, resolve_admin_context};
+pub use crate::api::context::bytes_to_uuid;
 pub use crate::api::helpers::uuid_to_bytes;
-
-pub type AuthContext = AdminContext;
 
 pub async fn get_company_api_key_by_uuid(
     company_uuid: &Uuid,
     db: &DatabaseConnection,
 ) -> Result<String, AppError> {
-    match get_company_api_key(company_uuid, db).await {
-        Ok(key) => Ok(key),
-        Err(AppError::NotFound(_)) => Err(AppError::Unauthorized("Company not found".to_string())),
-        Err(err) => Err(err),
-    }
-}
-
-pub async fn load_user_channel_access(
-    user_uuid: &Uuid,
-    db: &DatabaseConnection,
-) -> Result<HashSet<Uuid>, AppError> {
-    let user_bytes = uuid_to_bytes(user_uuid);
-    let records = channel_settings::Entity::find()
-        .filter(channel_settings::Column::UserId.eq(user_bytes))
-        .all(db)
-        .await?;
-
-    let mut accessible_channels = HashSet::new();
-
-    for record in records {
-        if record.receives_messages != 0 {
-            if let Some(channel_uuid) = bytes_to_uuid(&record.channel_id) {
-                accessible_channels.insert(channel_uuid);
-            }
-        }
-    }
-
-    Ok(accessible_channels)
+    get_company_api_key(company_uuid, db).await
 }
 
 pub async fn sync_channels_to_db(

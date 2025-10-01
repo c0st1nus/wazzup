@@ -10,7 +10,10 @@ use crate::{
     errors::AppError,
 };
 
+/// DEPRECATED: This context is no longer used as the service is now internal
+/// and does not require user authentication. It remains for backward compatibility only.
 #[derive(Clone)]
+#[deprecated(note = "Service is now internal - authentication is no longer required")]
 pub struct EmployeeContext {
     pub company_uuid: Uuid,
     pub user_uuid: Uuid,
@@ -69,7 +72,10 @@ impl EmployeeContext {
     }
 }
 
+/// DEPRECATED: This context is no longer used as the service is now internal
+/// and does not require user authentication. It remains for backward compatibility only.
 #[derive(Clone)]
+#[deprecated(note = "Service is now internal - authentication is no longer required")]
 pub struct AdminContext {
     pub company_uuid: Uuid,
     pub user_uuid: Uuid,
@@ -116,6 +122,9 @@ fn parse_uuid_cookie(req: &HttpRequest, name: &str) -> Result<Uuid, AppError> {
         .map_err(|_| AppError::Unauthorized(format!("Invalid `{}` cookie", name)))
 }
 
+/// DEPRECATED: Authentication is no longer required for this internal service.
+/// This function remains for backward compatibility only.
+#[deprecated(note = "Service is now internal - authentication is no longer required")]
 pub async fn resolve_employee_context(
     req: &HttpRequest,
     app_state: &web::Data<AppState>,
@@ -158,6 +167,9 @@ pub async fn resolve_employee_context(
     })
 }
 
+/// DEPRECATED: Authentication is no longer required for this internal service.
+/// This function remains for backward compatibility only.
+#[deprecated(note = "Service is now internal - authentication is no longer required")]
 pub fn ensure_employee_access(ctx: &EmployeeContext) -> Result<(), AppError> {
     if ctx.is_employee_role() {
         Ok(())
@@ -168,6 +180,9 @@ pub fn ensure_employee_access(ctx: &EmployeeContext) -> Result<(), AppError> {
     }
 }
 
+/// DEPRECATED: Authentication is no longer required for this internal service.
+/// This function remains for backward compatibility only.
+#[deprecated(note = "Service is now internal - authentication is no longer required")]
 pub fn ensure_admin_access(ctx: &EmployeeContext) -> Result<(), AppError> {
     if ctx.is_admin() {
         Ok(())
@@ -176,6 +191,9 @@ pub fn ensure_admin_access(ctx: &EmployeeContext) -> Result<(), AppError> {
     }
 }
 
+/// DEPRECATED: Authentication is no longer required for this internal service.
+/// This function remains for backward compatibility only.
+#[deprecated(note = "Service is now internal - authentication is no longer required")]
 pub async fn resolve_admin_context(
     req: &HttpRequest,
     app_state: &web::Data<AppState>,

@@ -14,7 +14,7 @@ use crate::{
 
 use super::{
     functions::{
-        get_company_api_key_by_uuid, load_user_channel_access, resolve_admin_context,
+        get_company_api_key_by_uuid,
         sync_channels_to_db, uuid_to_bytes,
     },
     structures::default_delete_chats,
@@ -26,22 +26,26 @@ use super::{
 
 #[utoipa::path(
 	get,
-	path = "/api/channels",
+	path = "/api/channels/{companyId}",
 	tag = "Channels",
+	params(
+		("companyId" = String, Path, description = "Company UUID"),
+	),
 	responses(
 		(status = 200, description = "List of channels", body = ChannelsResponse),
-		(status = 401, description = "Missing or invalid cookies"),
-		(status = 403, description = "User lacks admin role"),
+		(status = 404, description = "Company not found"),
 	)
 )]
-#[get("")]
+#[get("/{companyId}")]
 pub async fn get_channels(
     app_state: web::Data<AppState>,
-    req: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, AppError> {
-    let auth = resolve_admin_context(&req, &app_state).await?;
-    let channels_response = app_state.wazzup_api.get_channels(&auth.api_key).await?;
-    let accessible_channels = load_user_channel_access(&auth.user_uuid, &app_state.db).await?;
+    let company_uuid = Uuid::parse_str(&path.into_inner())
+        .map_err(|_| AppError::InvalidInput("companyId must be a valid UUID".to_string()))?;
+    
+    let api_key = get_company_api_key_by_uuid(&company_uuid, &app_state.db).await?;
+    let channels_response = app_state.wazzup_api.get_channels(&api_key).await?;
 
     let data = channels_response
         .channels
@@ -49,18 +53,11 @@ pub async fn get_channels(
         .map(|list| {
             list.iter()
                 .map(|info| {
-                    let has_access_for_user = info
-                        .guid
-                        .as_ref()
-                        .and_then(|guid| Uuid::parse_str(guid).ok())
-                        .map(|uuid| accessible_channels.contains(&uuid))
-                        .unwrap_or(false);
-
                     ChannelView {
                         deleted: info.deleted,
                         details: info.details.clone(),
                         guid: info.guid.clone(),
-                        has_acecess: info.has_access || has_access_for_user,
+                        has_acecess: info.has_access,
                         is_inbound: info.is_inbound,
                         name: info.name.clone(),
                         phone: info.phone.clone(),
@@ -89,26 +86,32 @@ pub async fn get_channels(
 
 #[utoipa::path(
 	post,
-	path = "/api/channels/iframe-link",
+	path = "/api/channels/{companyId}/iframe-link",
 	tag = "Channels",
+	params(
+		("companyId" = String, Path, description = "Company UUID"),
+	),
 	request_body = GenerateIframeLinkRequest,
 	responses(
 		(status = 200, description = "Wrapped iframe link generated", body = WrappedIframeLinkResponse),
-		(status = 401, description = "Missing or invalid cookies"),
-		(status = 403, description = "User lacks admin role"),
+		(status = 404, description = "Company not found"),
 	)
 )]
-#[post("/iframe-link")]
+#[post("/{companyId}/iframe-link")]
 pub async fn generate_wrapped_iframe_link(
     app_state: web::Data<AppState>,
     req: HttpRequest,
+    path: web::Path<String>,
     body: web::Json<GenerateIframeLinkRequest>,
 ) -> Result<HttpResponse, AppError> {
-    let auth = resolve_admin_context(&req, &app_state).await?;
+    let company_uuid = Uuid::parse_str(&path.into_inner())
+        .map_err(|_| AppError::InvalidInput("companyId must be a valid UUID".to_string()))?;
+    
+    let api_key = get_company_api_key_by_uuid(&company_uuid, &app_state.db).await?;
     let payload = body.into_inner();
     let original_response = app_state
         .wazzup_api
-        .generate_channel_iframe_link(&auth.api_key, &payload)
+        .generate_channel_iframe_link(&api_key, &payload)
         .await?;
     let original_link = original_response.link.ok_or_else(|| {
         AppError::ExternalApiError("Wazzup did not return an iframe link".to_string())
@@ -128,7 +131,7 @@ pub async fn generate_wrapped_iframe_link(
         "{}://{}/static/channel-setup.html?companyId={}&transport={}&originalLink={}",
         scheme,
         host,
-        auth.company_uuid,
+        company_uuid,
         payload.transport.as_deref().unwrap_or(""),
         encoded_original_link
     );
@@ -138,30 +141,31 @@ pub async fn generate_wrapped_iframe_link(
 
 #[utoipa::path(
 	delete,
-	path = "/api/channels/{channelId}",
+	path = "/api/channels/{companyId}/{channelId}",
 	tag = "Channels",
 	params(
+		("companyId" = String, Path, description = "Company UUID"),
 		("channelId" = String, Path, description = "Channel GUID"),
 		DeleteChannelQuery
 	),
 	responses(
 		(status = 200, description = "Channel deleted successfully", body = ChannelDeletionResponse),
-		(status = 401, description = "Missing or invalid cookies"),
-		(status = 403, description = "User lacks admin role"),
 		(status = 404, description = "Channel not found"),
 	)
 )]
-#[delete("/{channelId}")]
+#[delete("/{companyId}/{channelId}")]
 pub async fn delete_channel(
     app_state: web::Data<AppState>,
-    req: HttpRequest,
-    path: web::Path<String>,
+    path: web::Path<(String, String)>,
     query: Option<web::Query<DeleteChannelQuery>>,
 ) -> Result<HttpResponse, AppError> {
-    let auth = resolve_admin_context(&req, &app_state).await?;
-    let channel_id = path.into_inner();
+    let (company_id_raw, channel_id) = path.into_inner();
+    let company_uuid = Uuid::parse_str(&company_id_raw)
+        .map_err(|_| AppError::InvalidInput("companyId must be a valid UUID".to_string()))?;
     let channel_uuid = Uuid::parse_str(&channel_id)
         .map_err(|_| AppError::InvalidInput("channelId must be a valid UUID".to_string()))?;
+
+    let api_key = get_company_api_key_by_uuid(&company_uuid, &app_state.db).await?;
 
     let delete_chats = query
         .map(|q| q.into_inner().delete_chats)
@@ -174,7 +178,7 @@ pub async fn delete_channel(
         .map(|model| model.r#type);
 
     if transport.is_none() {
-        let response = app_state.wazzup_api.get_channels(&auth.api_key).await?;
+        let response = app_state.wazzup_api.get_channels(&api_key).await?;
         transport = response.channels.as_ref().and_then(|list| {
             list.iter()
                 .find(|item| item.guid.as_deref() == Some(channel_id.as_str()))
@@ -195,7 +199,7 @@ pub async fn delete_channel(
 
     app_state
         .wazzup_api
-        .delete_channel(&auth.api_key, &transport, &channel_id, delete_chats)
+        .delete_channel(&api_key, &transport, &channel_id, delete_chats)
         .await?;
 
     channel_settings::Entity::delete_many()

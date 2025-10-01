@@ -18,9 +18,10 @@ use crate::{
 };
 
 use super::functions::{
-    EmployeeContext, ensure_employee_access, option_i8_to_bool, resolve_employee_context,
+    option_i8_to_bool,
     uuid_bytes_to_string, uuid_to_bytes,
 };
+use crate::api::helpers::get_company_api_key;
 use super::structures::{
     AssigneeSummary, ChannelSummary, ChatDetails, ChatInfoSummary, ChatMessagesResponse,
     ChatPreview, ChatPreviewList, ChatPreviewsQuery, ClientSummary, MessageContentItem,
@@ -42,9 +43,10 @@ struct InboundCountMeta {
 
 #[utoipa::path(
     get,
-    path = "/api/chats/previews",
+    path = "/api/chats/{companyId}/previews",
     tag = "Chats",
     params(
+        ("companyId" = String, Path, description = "Company UUID"),
         ("offset" = Option<u64>, Query, description = "Number of previews to skip"),
         ("count" = Option<u64>, Query, description = "Maximum number of previews to return"),
         ("filter" = Option<String>, Query, description = "Filter chats by name (case-insensitive substring)"),
@@ -52,22 +54,22 @@ struct InboundCountMeta {
     ),
     responses(
         (status = 200, description = "Chat previews", body = ChatPreviewList),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Company not found"),
     )
 )]
-#[get("/previews")]
+#[get("/{companyId}/previews")]
 pub async fn get_chat_previews(
-    req: HttpRequest,
     app_state: web::Data<AppState>,
+    path: web::Path<String>,
     query: web::Query<ChatPreviewsQuery>,
 ) -> Result<HttpResponse, AppError> {
-    let ctx = resolve_employee_context(&req, &app_state).await?;
-    ensure_employee_access(&ctx)?;
+    let company_uuid = Uuid::parse_str(&path.into_inner())
+        .map_err(|_| AppError::InvalidInput("companyId must be a valid UUID".to_string()))?;
+    let company_id_bytes = uuid_to_bytes(&company_uuid);
 
     let params = query.into_inner();
 
-    let chat_records = load_company_chats(&ctx, &app_state, params.filter.clone()).await?;
+    let chat_records = load_company_chats(&company_id_bytes, &app_state, params.filter.clone()).await?;
     let chat_ids: Vec<String> = chat_records
         .iter()
         .map(|record| record.chat.id.clone())
@@ -92,17 +94,12 @@ pub async fn get_chat_previews(
             .copied()
             .unwrap_or(0);
 
-        let (preview, assigned_to_requestor) =
-            build_chat_preview(&ctx, record, unread_count, &user_map)?;
+        let preview = build_chat_preview(record, unread_count, &user_map)?;
 
         if let Some(bot_only) = params.bot {
             if bot_only != assigned_to_bot(&preview) {
                 continue;
             }
-        }
-
-        if !ctx.is_admin() && !assigned_to_requestor && !assigned_to_bot(&preview) {
-            continue;
         }
 
         previews.push((preview, last_timestamp));
@@ -143,30 +140,30 @@ pub async fn get_chat_previews(
 
 #[utoipa::path(
     get,
-    path = "/api/chats/{chatId}",
+    path = "/api/chats/{companyId}/{chatId}",
     tag = "Chats",
     params(
+        ("companyId" = String, Path, description = "Company UUID"),
         ("chatId" = String, Path, description = "Chat identifier (UUID)")
     ),
     responses(
         (status = 200, description = "Chat details", body = ChatDetails),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden"),
         (status = 404, description = "Chat not found"),
     )
 )]
-#[get("/{chat_id}")]
+#[get("/{companyId}/{chatId}")]
 pub async fn get_chat(
-    req: HttpRequest,
     app_state: web::Data<AppState>,
-    chat_id: web::Path<String>,
+    path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, AppError> {
-    let ctx = resolve_employee_context(&req, &app_state).await?;
-    ensure_employee_access(&ctx)?;
+    let (company_id_raw, chat_id) = path.into_inner();
+    let company_uuid = Uuid::parse_str(&company_id_raw)
+        .map_err(|_| AppError::InvalidInput("companyId must be a valid UUID".to_string()))?;
+    let company_id_bytes = uuid_to_bytes(&company_uuid);
 
-    let chat_uuid = Uuid::parse_str(chat_id.as_str())
+    let chat_uuid = Uuid::parse_str(&chat_id)
         .map_err(|_| AppError::InvalidInput("Invalid chat id".to_string()))?;
-    let record = load_single_chat(&ctx, &app_state, &chat_uuid).await?;
+    let record = load_single_chat(&company_id_bytes, &app_state, &chat_uuid).await?;
 
     let unread_map = load_inbound_counts(&app_state, &[record.chat.id.clone()]).await?;
     let unread_count = unread_map
@@ -180,14 +177,7 @@ pub async fn get_chat(
     }
     let user_map = load_users(&app_state, &user_ids).await?;
 
-    let (mut preview, assigned_to_requestor) =
-        build_chat_preview(&ctx, &record, unread_count, &user_map)?;
-
-    if !ctx.is_admin() && !assigned_to_requestor && !assigned_to_bot(&preview) {
-        return Err(AppError::Forbidden(
-            "Access denied to this chat".to_string(),
-        ));
-    }
+    let mut preview = build_chat_preview(&record, unread_count, &user_map)?;
 
     let (last_messages, author_ids) =
         load_last_messages(&app_state, &[record.chat.id.clone()]).await?;
@@ -204,33 +194,33 @@ pub async fn get_chat(
 
 #[utoipa::path(
     get,
-    path = "/api/chats/{chatId}/messages",
+    path = "/api/chats/{companyId}/{chatId}/messages",
     tag = "Chats",
     params(
+        ("companyId" = String, Path, description = "Company UUID"),
         ("chatId" = String, Path, description = "Chat identifier (UUID)"),
         ("offset" = Option<u64>, Query, description = "Number of messages to skip"),
         ("count" = Option<u64>, Query, description = "Maximum number of messages to return"),
     ),
     responses(
         (status = 200, description = "Chat messages", body = ChatMessagesResponse),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden"),
         (status = 404, description = "Chat not found"),
     )
 )]
-#[get("/{chat_id}/messages")]
+#[get("/{companyId}/{chatId}/messages")]
 pub async fn get_chat_messages(
-    req: HttpRequest,
     app_state: web::Data<AppState>,
-    chat_id: web::Path<String>,
+    path: web::Path<(String, String)>,
     query: web::Query<MessagesQuery>,
 ) -> Result<HttpResponse, AppError> {
-    let ctx = resolve_employee_context(&req, &app_state).await?;
-    ensure_employee_access(&ctx)?;
+    let (company_id_raw, chat_id) = path.into_inner();
+    let company_uuid = Uuid::parse_str(&company_id_raw)
+        .map_err(|_| AppError::InvalidInput("companyId must be a valid UUID".to_string()))?;
+    let company_id_bytes = uuid_to_bytes(&company_uuid);
 
-    let chat_uuid = Uuid::parse_str(chat_id.as_str())
+    let chat_uuid = Uuid::parse_str(&chat_id)
         .map_err(|_| AppError::InvalidInput("Invalid chat id".to_string()))?;
-    let record = load_single_chat(&ctx, &app_state, &chat_uuid).await?;
+    let record = load_single_chat(&company_id_bytes, &app_state, &chat_uuid).await?;
 
     let mut user_ids = HashSet::new();
     if let Some(client) = &record.client {
@@ -238,13 +228,7 @@ pub async fn get_chat_messages(
     }
     let user_map = load_users(&app_state, &user_ids).await?;
 
-    let (preview, assigned_to_requestor) = build_chat_preview(&ctx, &record, 0, &user_map)?;
-
-    if !ctx.is_admin() && !assigned_to_requestor && !assigned_to_bot(&preview) {
-        return Err(AppError::Forbidden(
-            "Access denied to this chat".to_string(),
-        ));
-    }
+    let preview = build_chat_preview(&record, 0, &user_map)?;
 
     let (offset, count) = normalize_pagination(query.offset, query.count)?;
 
@@ -280,47 +264,33 @@ pub async fn get_chat_messages(
 
 #[utoipa::path(
     post,
-    path = "/api/chats/{chatId}/send",
+    path = "/api/chats/{companyId}/{chatId}/send",
     tag = "Chats",
     params(
+        ("companyId" = String, Path, description = "Company UUID"),
         ("chatId" = String, Path, description = "Chat identifier (UUID)")
     ),
     request_body = SendChatMessageRequest,
     responses(
         (status = 200, description = "Message sent", body = SendChatMessageResponse),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden"),
         (status = 404, description = "Chat not found"),
         (status = 422, description = "Invalid payload"),
     )
 )]
-#[post("/{chat_id}/send")]
+#[post("/{companyId}/{chatId}/send")]
 pub async fn send_chat_message(
-    req: HttpRequest,
     app_state: web::Data<AppState>,
-    chat_id: web::Path<String>,
+    path: web::Path<(String, String)>,
     body: web::Json<SendChatMessageRequest>,
 ) -> Result<HttpResponse, AppError> {
-    let ctx = resolve_employee_context(&req, &app_state).await?;
-    ensure_employee_access(&ctx)?;
+    let (company_id_raw, chat_id) = path.into_inner();
+    let company_uuid = Uuid::parse_str(&company_id_raw)
+        .map_err(|_| AppError::InvalidInput("companyId must be a valid UUID".to_string()))?;
+    let company_id_bytes = uuid_to_bytes(&company_uuid);
 
-    let chat_uuid = Uuid::parse_str(chat_id.as_str())
+    let chat_uuid = Uuid::parse_str(&chat_id)
         .map_err(|_| AppError::InvalidInput("Invalid chat id".to_string()))?;
-    let record = load_single_chat(&ctx, &app_state, &chat_uuid).await?;
-
-    let mut user_ids = HashSet::new();
-    if let Some(client) = &record.client {
-        user_ids.insert(client.responsible_user_id.clone());
-    }
-    let user_map = load_users(&app_state, &user_ids).await?;
-
-    let (_, assigned_to_requestor) = build_chat_preview(&ctx, &record, 0, &user_map)?;
-
-    if !assigned_to_requestor && !ctx.is_admin() {
-        return Err(AppError::Forbidden(
-            "Only the assigned user can send messages to this chat".to_string(),
-        ));
-    }
+    let record = load_single_chat(&company_id_bytes, &app_state, &chat_uuid).await?;
 
     let payload = body.into_inner();
     if payload.message.content.is_empty() {
@@ -343,25 +313,11 @@ pub async fn send_chat_message(
         sender_id: 0, // Legacy placeholder, CRM-side sender stored separately
         text: text_content.clone(),
         content_uri: media_url.clone(),
-        crm_user_id: Some(ctx.user_uuid.to_string()),
+        crm_user_id: None, // Internal service - no user context
         crm_message_id: None,
     };
 
-    let api_key = ctx
-        .company
-        .wazzup_api_key
-        .as_ref()
-        .and_then(|key| {
-            let trimmed = key.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        })
-        .ok_or_else(|| {
-            AppError::InvalidInput("Wazzup API key is not configured for the company".to_string())
-        })?;
+    let api_key = get_company_api_key(&company_uuid, &app_state.db).await?;
 
     let response = app_state
         .wazzup_api
@@ -395,54 +351,86 @@ struct ChatRecord {
 }
 
 async fn load_company_chats(
-    ctx: &EmployeeContext,
+    company_id_bytes: &[u8],
     app_state: &web::Data<AppState>,
     filter: Option<String>,
 ) -> Result<Vec<ChatRecord>, AppError> {
+    // First, get all clients for the company
+    let company_clients = clients::Entity::find()
+        .filter(clients::Column::CompanyId.eq(company_id_bytes.to_vec()))
+        .all(&app_state.db)
+        .await?;
+
+    let client_ids: Vec<Vec<u8>> = company_clients.iter().map(|c| c.id.clone()).collect();
+    
+    if client_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut query = chats::Entity::find()
-        .join(JoinType::InnerJoin, chats::Relation::Clients.def())
-        .filter(clients::Column::CompanyId.eq(ctx.company_id_bytes.clone()));
+        .filter(chats::Column::ClientId.is_in(client_ids));
 
     if let Some(filter) = filter.filter(|value| !value.trim().is_empty()) {
         let pattern = format!("%{}%", filter.trim());
         query = query.filter(Expr::col(chats::Column::Name).ilike(pattern));
     }
 
-    let results = query
-        .find_also_related(clients::Entity)
-        .find_also_related(channels::Entity)
+    let chats_list = query
+        .find_with_related(channels::Entity)
         .all(&app_state.db)
         .await?;
 
-    Ok(results
+    let client_map: HashMap<Vec<u8>, clients::Model> = company_clients
         .into_iter()
-        .map(|(chat, client, channel)| ChatRecord {
-            chat,
-            client,
-            channel,
+        .map(|c| (c.id.clone(), c))
+        .collect();
+
+    Ok(chats_list
+        .into_iter()
+        .map(|(chat, channels)| {
+            let client = chat.client_id.as_ref().and_then(|id| client_map.get(id).cloned());
+            let channel = channels.into_iter().next();
+            ChatRecord {
+                chat,
+                client,
+                channel,
+            }
         })
         .collect())
 }
 
 async fn load_single_chat(
-    ctx: &EmployeeContext,
+    company_id_bytes: &[u8],
     app_state: &web::Data<AppState>,
     chat_uuid: &Uuid,
 ) -> Result<ChatRecord, AppError> {
     let chat_id_str = chat_uuid.to_string();
 
-    let query = chats::Entity::find_by_id(chat_id_str.clone())
-        .join(JoinType::InnerJoin, chats::Relation::Clients.def())
-        .filter(clients::Column::CompanyId.eq(ctx.company_id_bytes.clone()))
-        .find_also_related(clients::Entity)
-        .find_also_related(channels::Entity);
-
-    let result = query
+    let chat = chats::Entity::find_by_id(chat_id_str.clone())
         .one(&app_state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("Chat not found".to_string()))?;
 
-    let (chat, client, channel) = result;
+    // Load client and verify it belongs to the company
+    let client = if let Some(ref client_id) = chat.client_id {
+        let client_opt = clients::Entity::find_by_id(client_id.clone())
+            .one(&app_state.db)
+            .await?;
+        
+        if let Some(ref client_model) = client_opt {
+            if client_model.company_id.as_ref() != Some(&company_id_bytes.to_vec()) {
+                return Err(AppError::NotFound("Chat not found".to_string()));
+            }
+        }
+        client_opt
+    } else {
+        None
+    };
+
+    // Load channel
+    let channel = channels::Entity::find_by_id(chat.channel_id.clone())
+        .one(&app_state.db)
+        .await?;
 
     Ok(ChatRecord {
         chat,
@@ -523,11 +511,10 @@ async fn load_users(
 }
 
 fn build_chat_preview(
-    ctx: &EmployeeContext,
     record: &ChatRecord,
     unread_count: i64,
     user_map: &HashMap<Vec<u8>, users::Model>,
-) -> Result<(ChatPreview, bool), AppError> {
+) -> Result<ChatPreview, AppError> {
     let chat_id = record.chat.id.clone();
     let channel_summary = ChannelSummary {
         id: uuid_bytes_to_string(&record.chat.channel_id)?,
@@ -547,8 +534,7 @@ fn build_chat_preview(
         None
     };
 
-    let (assignee_summary, assigned_to_requestor) =
-        build_assignee_summary(ctx, record.client.as_ref(), user_map)?;
+    let assignee_summary = build_assignee_summary(record.client.as_ref(), user_map)?;
 
     let chat_info = ChatInfoSummary {
         name: record.chat.name.clone(),
@@ -565,14 +551,13 @@ fn build_chat_preview(
         assignee: assignee_summary,
     };
 
-    Ok((preview, assigned_to_requestor))
+    Ok(preview)
 }
 
 fn build_assignee_summary(
-    ctx: &EmployeeContext,
     client: Option<&clients::Model>,
     user_map: &HashMap<Vec<u8>, users::Model>,
-) -> Result<(Option<AssigneeSummary>, bool), AppError> {
+) -> Result<Option<AssigneeSummary>, AppError> {
     if let Some(client) = client {
         if let Some(user) = user_map.get(&client.responsible_user_id) {
             let id_string = uuid_bytes_to_string(&user.id)?;
@@ -585,12 +570,11 @@ fn build_assignee_summary(
                 role: role.clone(),
             };
 
-            let assigned_to_requestor = ctx.is_same_user(user.id.as_slice());
-            return Ok((Some(summary), assigned_to_requestor));
+            return Ok(Some(summary));
         }
     }
 
-    Ok((None, false))
+    Ok(None)
 }
 
 fn assigned_to_bot(preview: &ChatPreview) -> bool {
