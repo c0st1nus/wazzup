@@ -355,20 +355,38 @@ async fn load_company_chats(
     app_state: &web::Data<AppState>,
     filter: Option<String>,
 ) -> Result<Vec<ChatRecord>, AppError> {
-    // First, get all clients for the company
-    let company_clients = clients::Entity::find()
-        .filter(clients::Column::CompanyId.eq(company_id_bytes.to_vec()))
+    use crate::database::models::{channel_settings, company_users};
+    
+    // Find all users in the company
+    let company_user_records = company_users::Entity::find()
+        .filter(company_users::Column::CompanyId.eq(company_id_bytes.to_vec()))
         .all(&app_state.db)
         .await?;
-
-    let client_ids: Vec<Vec<u8>> = company_clients.iter().map(|c| c.id.clone()).collect();
     
-    if client_ids.is_empty() {
+    let user_ids: Vec<Vec<u8>> = company_user_records.iter().map(|cu| cu.user_id.clone()).collect();
+    
+    if user_ids.is_empty() {
         return Ok(Vec::new());
     }
-
+    
+    // Find all channels for these users
+    let channel_settings_records = channel_settings::Entity::find()
+        .filter(channel_settings::Column::UserId.is_in(user_ids))
+        .all(&app_state.db)
+        .await?;
+    
+    let channel_ids: Vec<Vec<u8>> = channel_settings_records
+        .iter()
+        .map(|cs| cs.channel_id.clone())
+        .collect();
+    
+    if channel_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    // Load all chats for these channels
     let mut query = chats::Entity::find()
-        .filter(chats::Column::ClientId.is_in(client_ids));
+        .filter(chats::Column::ChannelId.is_in(channel_ids));
 
     if let Some(filter) = filter.filter(|value| !value.trim().is_empty()) {
         let pattern = format!("%{}%", filter.trim());
@@ -377,6 +395,12 @@ async fn load_company_chats(
 
     let chats_list = query
         .find_with_related(channels::Entity)
+        .all(&app_state.db)
+        .await?;
+
+    // Load all clients for the company
+    let company_clients = clients::Entity::find()
+        .filter(clients::Column::CompanyId.eq(company_id_bytes.to_vec()))
         .all(&app_state.db)
         .await?;
 

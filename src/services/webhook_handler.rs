@@ -171,6 +171,7 @@ async fn ensure_chat(
     chat_uuid: &Uuid,
     channel_bytes: Vec<u8>,
     name_hint: Option<&str>,
+    client_id: Option<Vec<u8>>,
 ) -> Result<(), AppError> {
     let chat_id_str = chat_uuid.to_string();
 
@@ -178,6 +179,9 @@ async fn ensure_chat(
         .one(db)
         .await?
     {
+        let mut needs_update = false;
+        let mut active = existing.clone().into_active_model();
+
         if let Some(name) = name_hint.and_then(|value| {
             let trimmed = value.trim();
             if trimmed.is_empty() {
@@ -187,10 +191,20 @@ async fn ensure_chat(
             }
         }) {
             if existing.name != name {
-                let mut active = existing.into_active_model();
                 active.name = Set(name.to_string());
-                active.update(db).await?;
+                needs_update = true;
             }
+        }
+
+        if let Some(client_bytes) = client_id {
+            if existing.client_id.as_ref() != Some(&client_bytes) {
+                active.client_id = Set(Some(client_bytes));
+                needs_update = true;
+            }
+        }
+
+        if needs_update {
+            active.update(db).await?;
         }
     } else {
         let chat_name = name_hint
@@ -199,16 +213,17 @@ async fn ensure_chat(
             .unwrap_or_else(|| chat_uuid.to_string());
 
         log::debug!(
-            "Creating new chat: uuid={}, channel_bytes len={}, name={}",
+            "Creating new chat: uuid={}, channel_bytes len={}, name={}, has_client={}",
             chat_uuid,
             channel_bytes.len(),
-            chat_name
+            chat_name,
+            client_id.is_some()
         );
 
         let record = chats::ActiveModel {
             id: Set(chat_id_str.clone()),
             channel_id: Set(channel_bytes),
-            client_id: Set(None),
+            client_id: Set(client_id),
             name: Set(chat_name),
         };
 
@@ -217,6 +232,111 @@ async fn ensure_chat(
     }
 
     Ok(())
+}
+
+/// Создаёт или обновляет клиента на основе данных из webhook сообщения
+async fn ensure_client_from_message(
+    db: &DatabaseConnection,
+    company_bytes: &[u8],
+    message: &WebhookMessage,
+) -> Result<Option<Vec<u8>>, AppError> {
+    use sea_orm::{ColumnTrait, QueryFilter};
+
+    // Извлекаем информацию о клиенте
+    let client_phone = message
+        .client_phone
+        .as_ref()
+        .or_else(|| message.contact.as_ref().and_then(|c| c.phone.as_ref()));
+
+    let client_name = message
+        .client_name
+        .as_ref()
+        .or_else(|| message.contact.as_ref().and_then(|c| c.name.as_ref()));
+
+    // Если нет телефона, не создаём клиента
+    let phone = match client_phone {
+        Some(p) if !p.trim().is_empty() => p,
+        _ => {
+            log::debug!("No client phone in message, skipping client creation");
+            return Ok(None);
+        }
+    };
+
+    // Санитизируем телефон
+    let sanitized_phone = match validation::sanitize_phone(phone) {
+        Some(p) => p,
+        None => {
+            log::warn!("Invalid phone format: {}", phone);
+            return Ok(None);
+        }
+    };
+
+    // Ищем существующего клиента по телефону
+    if let Some(existing) = clients::Entity::find()
+        .filter(clients::Column::Phone.eq(&sanitized_phone))
+        .one(db)
+        .await?
+    {
+        log::debug!(
+            "Found existing client by phone {}: {:?}",
+            sanitized_phone,
+            uuid::Uuid::from_slice(&existing.id).ok()
+        );
+        return Ok(Some(existing.id));
+    }
+
+    // Создаём нового клиента
+    let client_uuid = Uuid::new_v4();
+    let client_id_bytes = uuid_to_bytes(&client_uuid);
+
+    let full_name = client_name
+        .filter(|n| !n.trim().is_empty())
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| sanitized_phone.clone());
+
+    let email = format!("{}@wazzup.local", client_uuid);
+
+    // Нужен responsible_user_id - возьмём первого пользователя компании
+    use crate::database::models::company_users;
+
+    let responsible_user_id = if let Some(company_user) = company_users::Entity::find()
+        .filter(company_users::Column::CompanyId.eq(company_bytes))
+        .one(db)
+        .await?
+    {
+        company_user.user_id
+    } else {
+        log::warn!(
+            "No users found for company, cannot create client without responsible_user_id"
+        );
+        return Ok(None);
+    };
+
+    let new_client = clients::ActiveModel {
+        id: Set(client_id_bytes.clone()),
+        company_id: Set(Some(company_bytes.to_vec())),
+        full_name: Set(full_name.clone()),
+        email: Set(Some(email)),
+        phone: Set(Some(sanitized_phone.clone())),
+        responsible_user_id: Set(responsible_user_id),
+        created_at: Set(Utc::now().into()),
+    };
+
+    match new_client.insert(db).await {
+        Ok(_) => {
+            log::info!(
+                "Created new client: id={}, name={}, phone={}",
+                client_uuid,
+                full_name,
+                sanitized_phone
+            );
+            Ok(Some(client_id_bytes))
+        }
+        Err(err) => {
+            log::error!("Failed to create client: {}", err);
+            Ok(None)
+        }
+    }
 }
 
 async fn process_contact(
@@ -335,11 +455,17 @@ async fn process_message(
         message.chat_id,
         chat_uuid
     );
+
+    // Создаём или находим клиента из сообщения
+    let client_id = ensure_client_from_message(db, uuid_to_bytes(company_uuid).as_slice(), &message)
+        .await?;
+
     ensure_chat(
         db,
         &chat_uuid,
         channel_bytes.clone(),
         message.client_name.as_deref(),
+        client_id,
     )
     .await?;
 
